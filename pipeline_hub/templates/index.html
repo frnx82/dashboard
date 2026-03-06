@@ -141,6 +141,227 @@
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        /* ── User Menu ──────────────────────────────────── */
+        .user-menu-container {
+            position: relative;
+        }
+
+        .user-menu {
+            display: none;
+            position: absolute;
+            top: 42px;
+            right: 0;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+            min-width: 200px;
+            z-index: 150;
+            overflow: hidden;
+        }
+
+        .user-menu.show {
+            display: block;
+            animation: fadeIn 0.15s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .user-menu-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .user-menu-name {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .user-menu-login {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .user-menu-item {
+            display: block;
+            width: 100%;
+            padding: 10px 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border: none;
+            background: none;
+            cursor: pointer;
+            text-align: left;
+            font-family: inherit;
+            transition: all 0.1s;
+        }
+
+        .user-menu-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .user-menu-divider {
+            border-top: 1px solid var(--border);
+        }
+
+        .user-menu-item.logout {
+            color: var(--failure);
+        }
+
+        /* ── Login Button ───────────────────────────────── */
+        .login-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+
+        .login-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-light);
+        }
+
+        .login-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: var(--text-primary);
+        }
+
+        /* ── Login Screen ───────────────────────────────── */
+        .login-screen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-primary);
+            z-index: 90;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-screen.show {
+            display: flex;
+        }
+
+        .login-card {
+            text-align: center;
+            max-width: 420px;
+            padding: 48px 40px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }
+
+        .login-card .login-logo {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .login-card .login-subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        .login-github-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 32px;
+            background: #fff;
+            color: #24292e;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .login-github-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(255, 255, 255, 0.15);
+        }
+
+        .login-github-btn svg {
+            width: 22px;
+            height: 22px;
+            fill: #24292e;
+        }
+
+        .login-footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .login-footer a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+
+        .auth-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--text-muted);
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 2px 8px;
+        }
+
+        .auth-badge.oauth {
+            color: var(--success);
+        }
+
+        .auth-badge.pat {
+            color: var(--warning);
         }
 
         /* ── Layout ─────────────────────────────────────── */
@@ -812,7 +1033,9 @@
             oninput="filterRepos(this.value)">
         <div class="header-right">
             <div class="header-stats" id="headerStats"></div>
-            <div class="user-avatar" title="User">R</div>
+            <div id="headerAuth">
+                <!-- Populated dynamically -->
+            </div>
         </div>
     </div>
 
@@ -831,6 +1054,24 @@
                 <h3>Select a repository</h3>
                 <p>Choose a repo from the sidebar to view its workflows</p>
             </div>
+        </div>
+    </div>
+
+    <!-- Login Screen (shown when not authenticated in OAuth mode) -->
+    <div class="login-screen" id="loginScreen">
+        <div class="login-card">
+            <div class="login-logo">Pipeline Hub</div>
+            <div class="login-subtitle">Sign in with your GitHub account to view<br>and trigger your organization's
+                workflows</div>
+            <a href="/login" class="login-github-btn">
+                <svg viewBox="0 0 16 16">
+                    <path fill-rule="evenodd"
+                        d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+                    </path>
+                </svg>
+                Login with GitHub
+            </a>
+            <div class="login-footer">Your GitHub permissions determine which repos and workflows you can access</div>
         </div>
     </div>
 
@@ -859,8 +1100,10 @@
         let repos = [];
         let selectedRepo = null;
         let currentWorkflows = [];
-        let pendingTrigger = null; // { repo, workflowId, workflowName }
+        let pendingTrigger = null;
         let refreshInterval = null;
+        let currentUser = null;
+        let authMode = 'pat';
 
         const LANG_ICONS = {
             'TypeScript': 'ts', 'Python': 'py', 'Go': 'go', 'HCL': 'hcl',
@@ -871,16 +1114,115 @@
             'Kotlin': 'KT', 'Java': 'JV', 'Node.js': 'JS'
         };
 
+        const GITHUB_SVG = `<svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>`;
+
         // ── Init ─────────────────────────────────────────────
         async function init() {
-            const [repoRes, statsRes] = await Promise.all([
-                fetch('/api/repos').then(r => r.json()),
-                fetch('/api/stats').then(r => r.json())
-            ]);
-            repos = repoRes;
-            renderRepos(repos);
-            renderHeaderStats(statsRes);
+            try {
+                // Check auth status first
+                const configRes = await fetch('/api/config').then(r => r.json());
+                authMode = configRes.auth_mode || 'pat';
+
+                if (!configRes.logged_in) {
+                    if (authMode === 'oauth') {
+                        // Show login screen
+                        document.getElementById('loginScreen').classList.add('show');
+                        renderHeaderAuth(null);
+                        return;
+                    }
+                    // PAT mode with no token — show error
+                    renderHeaderAuth(null);
+                    document.getElementById('mainContent').innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">🔑</div>
+                            <h3>No GitHub Token</h3>
+                            <p>Set GITHUB_TOKEN environment variable or configure OAuth</p>
+                        </div>`;
+                    return;
+                }
+
+                // Authenticated — fetch user info and render
+                const userRes = await fetch('/api/user').then(r => r.json());
+                currentUser = userRes;
+                renderHeaderAuth(userRes);
+
+                // Load repos and stats
+                const [repoRes, statsRes] = await Promise.all([
+                    fetch('/api/repos').then(r => r.json()),
+                    fetch('/api/stats').then(r => r.json())
+                ]);
+
+                // Handle auth errors from API
+                if (repoRes.auth_required || statsRes.auth_required) {
+                    if (authMode === 'oauth') {
+                        document.getElementById('loginScreen').classList.add('show');
+                    }
+                    return;
+                }
+
+                repos = Array.isArray(repoRes) ? repoRes : [];
+                renderRepos(repos);
+                if (statsRes && !statsRes.error) renderHeaderStats(statsRes);
+
+            } catch (e) {
+                console.error('Init error:', e);
+            }
         }
+
+        // ── Auth UI ──────────────────────────────────────────
+        function renderHeaderAuth(user) {
+            const container = document.getElementById('headerAuth');
+            if (!user || !user.logged_in) {
+                if (authMode === 'oauth') {
+                    container.innerHTML = `
+                        <a href="/login" class="login-btn">
+                            ${GITHUB_SVG} Sign in
+                        </a>`;
+                } else {
+                    container.innerHTML = `<span class="auth-badge pat">⚠ No Token</span>`;
+                }
+                return;
+            }
+
+            const initials = (user.name || user.login || '?').charAt(0).toUpperCase();
+            const avatarHtml = user.avatar_url
+                ? `<img src="${user.avatar_url}" alt="${user.login}">`
+                : initials;
+
+            const modeBadge = authMode === 'oauth'
+                ? '<span class="auth-badge oauth">🔐 OAuth</span>'
+                : '<span class="auth-badge pat">🔑 PAT</span>';
+
+            container.innerHTML = `
+                <div class="user-menu-container">
+                    <div class="user-avatar" onclick="toggleUserMenu()" title="${user.login}">
+                        ${avatarHtml}
+                    </div>
+                    <div class="user-menu" id="userMenu">
+                        <div class="user-menu-header">
+                            <div class="user-menu-name">${user.name || user.login}</div>
+                            <div class="user-menu-login">@${user.login} ${modeBadge}</div>
+                        </div>
+                        <a href="https://github.com/${user.login}" target="_blank" class="user-menu-item">👤 GitHub Profile</a>
+                        <a href="https://github.com/settings/connections/applications" target="_blank" class="user-menu-item">⚙️ App Permissions</a>
+                        <div class="user-menu-divider"></div>
+                        <a href="/logout" class="user-menu-item logout">🚪 Sign Out</a>
+                    </div>
+                </div>`;
+        }
+
+        function toggleUserMenu() {
+            const menu = document.getElementById('userMenu');
+            menu.classList.toggle('show');
+        }
+
+        // Close user menu when clicking outside
+        document.addEventListener('click', function (e) {
+            const menu = document.getElementById('userMenu');
+            if (menu && !e.target.closest('.user-menu-container')) {
+                menu.classList.remove('show');
+            }
+        });
 
         function renderHeaderStats(s) {
             document.getElementById('headerStats').innerHTML = `
@@ -916,33 +1258,39 @@
             selectedRepo = repos.find(r => r.full_name === fullName);
             renderRepos(repos);
 
-            // Clear old refresh
             if (refreshInterval) clearInterval(refreshInterval);
 
             const main = document.getElementById('mainContent');
             main.innerHTML = `<div style="text-align:center;padding:60px"><div class="spinner"></div></div>`;
 
             await loadRepoData(fullName);
-
-            // Auto-refresh every 5s
             refreshInterval = setInterval(() => loadRepoData(fullName), 5000);
         }
 
         async function loadRepoData(fullName) {
             const [owner, repo] = fullName.split('/');
-            const [workflows, runs] = await Promise.all([
-                fetch(`/api/repos/${owner}/${repo}/workflows`).then(r => r.json()),
-                fetch(`/api/repos/${owner}/${repo}/runs`).then(r => r.json())
-            ]);
-            currentWorkflows = workflows;
-            renderMainContent(selectedRepo, workflows, runs);
+            try {
+                const [workflows, runs] = await Promise.all([
+                    fetch(`/api/repos/${owner}/${repo}/workflows`).then(r => {
+                        if (r.status === 401) { window.location.href = '/login'; throw new Error('auth'); }
+                        return r.json();
+                    }),
+                    fetch(`/api/repos/${owner}/${repo}/runs`).then(r => {
+                        if (r.status === 401) { window.location.href = '/login'; throw new Error('auth'); }
+                        return r.json();
+                    })
+                ]);
+                currentWorkflows = workflows;
+                renderMainContent(selectedRepo, workflows, runs);
+            } catch (e) {
+                if (e.message !== 'auth') console.error('Load error:', e);
+            }
         }
 
         // ── Render Main ──────────────────────────────────────
         function renderMainContent(repo, workflows, runs) {
             const main = document.getElementById('mainContent');
 
-            // Repo header
             let html = `
             <div class="repo-header">
                 <h1>${repo.name}</h1>
@@ -951,7 +1299,6 @@
             </div>
         `;
 
-            // Workflows table
             html += `<div class="section-card">
             <div class="section-title">
                 <span>Workflows</span>
@@ -998,7 +1345,6 @@
             </table>
         </div>`;
 
-            // Recent Runs
             html += `<div class="section-card">
             <div class="section-title">
                 <span>Recent Runs</span>
@@ -1044,7 +1390,6 @@
             if (!wf) return;
 
             if (hasInputs && wf.dispatch_inputs && wf.dispatch_inputs.length > 0) {
-                // Show input modal
                 pendingTrigger = { workflowId, name, repo: selectedRepo.full_name, inputs: wf.dispatch_inputs };
                 document.getElementById('modalTitle').textContent = `Run: ${name}`;
                 document.getElementById('modalSubtitle').textContent = `${selectedRepo.full_name} • ${wf.file}`;
@@ -1079,7 +1424,6 @@
                 document.getElementById('modalInputs').innerHTML = inputsHtml;
                 document.getElementById('inputModal').classList.add('show');
             } else {
-                // Direct trigger, no inputs
                 triggerWorkflow(selectedRepo.full_name, workflowId, name, selectedRepo.default_branch, {});
             }
         }
@@ -1109,10 +1453,14 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ branch, inputs })
                 });
+                if (res.status === 401) {
+                    showToast('Session expired. Redirecting to login...', 'error');
+                    setTimeout(() => { window.location.href = '/login'; }, 1500);
+                    return;
+                }
                 const data = await res.json();
                 if (res.ok) {
                     showToast(data.message || `${name} triggered!`, 'success');
-                    // Refresh immediately
                     setTimeout(() => loadRepoData(fullName), 1000);
                 } else {
                     showToast(`Failed: ${data.error || 'Unknown error'}`, 'error');

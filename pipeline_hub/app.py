@@ -4,34 +4,90 @@ Pipeline Hub — GitHub Workflow Dashboard (Production)
 A Flask app that aggregates GitHub Actions workflows from multiple repos,
 lets you trigger builds, and monitor run status — all from one place.
 
-Environment Variables:
-    GITHUB_TOKEN       — GitHub Personal Access Token (required)
+Authentication Modes:
+    1. OAuth (recommended) — users log in with their GitHub account
+       Requires: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, FLASK_SECRET_KEY
+    2. PAT (legacy) — shared Personal Access Token for all API calls
+       Requires: GITHUB_TOKEN
+
+Other Environment Variables:
     GITHUB_ORG         — GitHub org/user to list repos from (optional)
-    GITHUB_REPOS       — Comma-separated list of specific repos (optional, overrides org listing)
+    GITHUB_REPOS       — Comma-separated list of specific repos (optional)
     PIPELINE_HUB_PORT  — Port to run on (default: 9090)
 
 For local development without a GitHub token, use mock_app.py instead.
 """
 
-from flask import Flask, render_template, jsonify, request
-import os, json, base64
+from flask import Flask, render_template, jsonify, request, redirect, session, url_for
+from functools import wraps
+import os, json, base64, secrets
 from datetime import datetime
+from urllib.parse import urlencode
 
 app = Flask(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────────────────────────────────────
+GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID', '')
+GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET', '')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 GITHUB_ORG = os.getenv('GITHUB_ORG', '')
 GITHUB_REPOS = [r.strip() for r in os.getenv('GITHUB_REPOS', '').split(',') if r.strip()]
 GITHUB_API = 'https://api.github.com'
 
-if not GITHUB_TOKEN:
-    print("⚠️  [Pipeline Hub] No GITHUB_TOKEN set. API calls will fail.")
-    print("    For local testing, use: python mock_app.py")
+# Flask session secret — required for OAuth mode, auto-generated if not set
+app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+
+# Determine auth mode
+AUTH_MODE = 'oauth' if (GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET) else 'pat'
+
+if AUTH_MODE == 'oauth':
+    print(f"[Pipeline Hub] OAuth mode — Client ID: {GITHUB_CLIENT_ID[:8]}...")
+    print(f"    Users will log in with their GitHub accounts.")
+elif GITHUB_TOKEN:
+    print(f"[Pipeline Hub] PAT mode — using shared token for all API calls")
+    print(f"    org: {GITHUB_ORG or 'auto'}, repos filter: {len(GITHUB_REPOS) or 'all'}")
 else:
-    print(f"[Pipeline Hub] LIVE mode — org: {GITHUB_ORG or 'auto'}, repos filter: {len(GITHUB_REPOS) or 'all'}")
+    print("⚠️  [Pipeline Hub] No auth configured. API calls will fail.")
+    print("    Set GITHUB_CLIENT_ID + GITHUB_CLIENT_SECRET for OAuth mode")
+    print("    Or set GITHUB_TOKEN for PAT mode")
+    print("    For local testing, use: python mock_app.py")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Auth Helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def get_token():
+    """Get the GitHub token for the current request.
+    
+    In OAuth mode: returns the logged-in user's OAuth token from the session.
+    In PAT mode: returns the shared GITHUB_TOKEN.
+    Returns empty string if no token is available.
+    """
+    if AUTH_MODE == 'oauth':
+        return session.get('github_token', '')
+    return GITHUB_TOKEN
+
+
+def is_authenticated():
+    """Check if the current user is authenticated."""
+    if AUTH_MODE == 'oauth':
+        return bool(session.get('github_token'))
+    return bool(GITHUB_TOKEN)
+
+
+def login_required(f):
+    """Decorator to require authentication for API routes."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not is_authenticated():
+            if request.is_json or request.path.startswith('/api/'):
+                return jsonify({'error': 'Not authenticated', 'auth_required': True}), 401
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -39,8 +95,9 @@ else:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _headers():
+    token = get_token()
     return {
-        'Authorization': f'token {GITHUB_TOKEN}',
+        'Authorization': f'token {token}',
         'Accept': 'application/vnd.github.v3+json',
         'User-Agent': 'PipelineHub/1.0'
     }
@@ -135,6 +192,108 @@ def _parse_workflow_inputs(content_b64):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# OAuth Routes
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route('/login')
+def login():
+    """Redirect the user to GitHub's OAuth authorization page."""
+    if AUTH_MODE != 'oauth':
+        return redirect('/')
+
+    # Generate a random state to prevent CSRF
+    state = secrets.token_hex(16)
+    session['oauth_state'] = state
+
+    params = {
+        'client_id': GITHUB_CLIENT_ID,
+        'redirect_uri': url_for('auth_callback', _external=True),
+        'scope': 'repo workflow',
+        'state': state,
+    }
+    github_auth_url = f'https://github.com/login/oauth/authorize?{urlencode(params)}'
+    return redirect(github_auth_url)
+
+
+@app.route('/auth/callback')
+def auth_callback():
+    """Handle the OAuth callback from GitHub."""
+    import requests
+
+    if AUTH_MODE != 'oauth':
+        return redirect('/')
+
+    # Verify state to prevent CSRF
+    state = request.args.get('state', '')
+    if state != session.get('oauth_state'):
+        return jsonify({'error': 'Invalid OAuth state. Please try logging in again.'}), 403
+
+    code = request.args.get('code', '')
+    if not code:
+        return jsonify({'error': 'No authorization code received from GitHub.'}), 400
+
+    # Exchange the code for an access token
+    try:
+        token_response = requests.post(
+            'https://github.com/login/oauth/access_token',
+            headers={'Accept': 'application/json'},
+            data={
+                'client_id': GITHUB_CLIENT_ID,
+                'client_secret': GITHUB_CLIENT_SECRET,
+                'code': code,
+                'redirect_uri': url_for('auth_callback', _external=True),
+            },
+            timeout=15,
+        )
+        token_data = token_response.json()
+
+        if 'access_token' not in token_data:
+            error = token_data.get('error_description', token_data.get('error', 'Unknown error'))
+            print(f"[OAuth] Token exchange failed: {error}")
+            return jsonify({'error': f'OAuth failed: {error}'}), 400
+
+        # Store the token in the session
+        access_token = token_data['access_token']
+        session['github_token'] = access_token
+
+        # Fetch user info and store in session
+        user_response = requests.get(
+            f'{GITHUB_API}/user',
+            headers={
+                'Authorization': f'token {access_token}',
+                'Accept': 'application/vnd.github.v3+json',
+            },
+            timeout=10,
+        )
+        if user_response.status_code == 200:
+            user_data = user_response.json()
+            session['github_user'] = {
+                'login': user_data.get('login', ''),
+                'name': user_data.get('name', ''),
+                'avatar_url': user_data.get('avatar_url', ''),
+            }
+
+        # Clear the OAuth state
+        session.pop('oauth_state', None)
+
+        print(f"[OAuth] User {session.get('github_user', {}).get('login', 'unknown')} logged in successfully")
+        return redirect('/')
+
+    except Exception as e:
+        print(f"[OAuth] Error during token exchange: {e}")
+        return jsonify({'error': f'OAuth error: {str(e)}'}), 500
+
+
+@app.route('/logout')
+def logout():
+    """Clear the session and redirect to home."""
+    user = session.get('github_user', {}).get('login', 'unknown')
+    session.clear()
+    print(f"[OAuth] User {user} logged out")
+    return redirect('/')
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Routes
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -145,15 +304,60 @@ def index():
 
 @app.route('/api/config')
 def get_config():
+    user = session.get('github_user', None)
     return jsonify({
         'mode': 'live',
+        'auth_mode': AUTH_MODE,
+        'logged_in': is_authenticated(),
+        'user': user,
         'org': GITHUB_ORG or 'auto',
         'repos_filter': GITHUB_REPOS,
-        'token_set': bool(GITHUB_TOKEN),
+        'token_set': is_authenticated(),
     })
 
 
+@app.route('/api/user')
+def get_user():
+    """Return the current authenticated user info."""
+    if not is_authenticated():
+        return jsonify({
+            'logged_in': False,
+            'auth_mode': AUTH_MODE,
+        })
+
+    user = session.get('github_user', None)
+    if user:
+        return jsonify({
+            'logged_in': True,
+            'auth_mode': AUTH_MODE,
+            **user,
+        })
+
+    # PAT mode — fetch user from GitHub API
+    if AUTH_MODE == 'pat':
+        try:
+            data = _github_get('/user')
+            return jsonify({
+                'logged_in': True,
+                'auth_mode': AUTH_MODE,
+                'login': data.get('login', ''),
+                'name': data.get('name', ''),
+                'avatar_url': data.get('avatar_url', ''),
+            })
+        except Exception:
+            return jsonify({
+                'logged_in': True,
+                'auth_mode': AUTH_MODE,
+                'login': 'service-account',
+                'name': 'Service Account',
+                'avatar_url': '',
+            })
+
+    return jsonify({'logged_in': False, 'auth_mode': AUTH_MODE})
+
+
 @app.route('/api/repos')
+@login_required
 def list_repos():
     try:
         repos = []
@@ -223,6 +427,7 @@ def list_repos():
 
 
 @app.route('/api/repos/<owner>/<repo>/workflows')
+@login_required
 def list_workflows(owner, repo):
     try:
         data = _github_get(f'/repos/{owner}/{repo}/actions/workflows')
@@ -291,6 +496,7 @@ def list_workflows(owner, repo):
 
 
 @app.route('/api/repos/<owner>/<repo>/runs')
+@login_required
 def list_runs(owner, repo):
     try:
         data = _github_get(f'/repos/{owner}/{repo}/actions/runs', {'per_page': 20})
@@ -327,6 +533,7 @@ def list_runs(owner, repo):
 
 
 @app.route('/api/repos/<owner>/<repo>/workflows/<int:workflow_id>/run', methods=['POST'])
+@login_required
 def trigger_workflow(owner, repo, workflow_id):
     try:
         data = request.json or {}
@@ -339,6 +546,8 @@ def trigger_workflow(owner, repo, workflow_id):
         )
 
         if response.status_code == 204:
+            triggered_by = session.get('github_user', {}).get('login', 'unknown')
+            print(f"[trigger] {triggered_by} triggered workflow {workflow_id} on {owner}/{repo}@{branch}")
             return jsonify({'status': 'triggered', 'message': f'✅ Workflow triggered on {branch}'})
         elif response.status_code == 422:
             error_detail = ""
@@ -348,7 +557,7 @@ def trigger_workflow(owner, repo, workflow_id):
                 error_detail = response.text[:200]
             return jsonify({'error': f'Cannot trigger: {error_detail}. Ensure workflow has workflow_dispatch trigger and branch exists.'}), 422
         elif response.status_code == 403:
-            return jsonify({'error': 'Permission denied. Token needs workflow scope.'}), 403
+            return jsonify({'error': 'Permission denied. Your GitHub account may not have write access to this repo.'}), 403
         elif response.status_code == 404:
             return jsonify({'error': 'Workflow or repo not found. Check permissions.'}), 404
         else:
@@ -360,6 +569,7 @@ def trigger_workflow(owner, repo, workflow_id):
 
 
 @app.route('/api/stats')
+@login_required
 def global_stats():
     try:
         repos_resp = list_repos()

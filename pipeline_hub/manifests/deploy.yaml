@@ -2,7 +2,20 @@
 # ──────────────────────────────────────────────────────────────────
 # Pipeline Hub — Kubernetes Deployment Manifest
 # ──────────────────────────────────────────────────────────────────
-# Before applying, create the GitHub token secret:
+# Authentication Options:
+#
+# Option A — OAuth (recommended):
+#   Users log in with their GitHub accounts. Each user's token is
+#   used for API calls, giving per-user audit trails.
+#
+#   kubectl create secret generic pipeline-hub-oauth \
+#     --from-literal=GITHUB_CLIENT_ID=Ov23liXXXXXXX \
+#     --from-literal=GITHUB_CLIENT_SECRET=your_secret_here \
+#     --from-literal=FLASK_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))") \
+#     -n YOUR_NAMESPACE
+#
+# Option B — Shared PAT (legacy):
+#   All API calls use a single GitHub Personal Access Token.
 #
 #   kubectl create secret generic pipeline-hub-github \
 #     --from-literal=GITHUB_TOKEN=ghp_YOUR_TOKEN_HERE \
@@ -36,17 +49,37 @@ spec:
         - containerPort: 9090
           protocol: TCP
         env:
+        # ── Option A: OAuth (recommended) ──────────────────
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-hub-oauth
+              key: GITHUB_CLIENT_ID
+              optional: true
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-hub-oauth
+              key: GITHUB_CLIENT_SECRET
+              optional: true
+        - name: FLASK_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pipeline-hub-oauth
+              key: FLASK_SECRET_KEY
+              optional: true
+        # ── Option B: Shared PAT (legacy) ──────────────────
         - name: GITHUB_TOKEN
           valueFrom:
             secretKeyRef:
               name: pipeline-hub-github
               key: GITHUB_TOKEN
-        # ── Option A: List all repos from an org ──
+              optional: true
+        # ── Common config ──────────────────────────────────
         - name: GITHUB_ORG
           value: "YOUR_GITHUB_ORG"                  # ← Replace with your org
-        # ── Option B: Specific repos only (comma-separated) ──
         # - name: GITHUB_REPOS
-        #   value: "my-org/frontend-app,my-org/backend-api,my-org/billing-service"
+        #   value: "my-org/frontend-app,my-org/backend-api"
         - name: PIPELINE_HUB_PORT
           value: "9090"
         resources:
