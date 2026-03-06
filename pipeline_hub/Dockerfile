@@ -15,5 +15,8 @@ USER appuser
 
 EXPOSE 9090
 
+# Ensure Python output is not buffered (so logs appear in kubectl logs)
+ENV PYTHONUNBUFFERED=1
+
 # Use gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:9090", "--workers", "2", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:9090", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "app:app"]

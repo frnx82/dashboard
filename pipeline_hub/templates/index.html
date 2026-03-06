@@ -1233,6 +1233,7 @@
         }
 
         function renderRepos(list) {
+            if (!Array.isArray(list)) list = [];
             document.getElementById('repoList').innerHTML = list.map(r => {
                 const cls = LANG_ICONS[r.language] || 'py';
                 const label = LANG_LABELS[r.language] || '?';
