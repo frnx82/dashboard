@@ -42,6 +42,13 @@ GITHUB_ORG = os.getenv('GITHUB_ORG', '')
 GITHUB_REPOS = [r.strip() for r in os.getenv('GITHUB_REPOS', '').split(',') if r.strip()]
 BASE_URL = os.getenv('BASE_URL', '').rstrip('/')  # e.g. https://pipeline-hub.example.com
 
+# SSL verification — set to 'false' to disable (needed behind corporate TLS-intercepting proxies)
+SSL_VERIFY = os.getenv('SSL_VERIFY', 'true').lower() not in ('false', '0', 'no')
+if not SSL_VERIFY:
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    print('[Pipeline Hub] ⚠️  SSL verification DISABLED (SSL_VERIFY=false)')
+
 # GitHub Enterprise support — set GITHUB_URL to your GHE instance
 # e.g. https://github.yourcompany.com
 GITHUB_URL = os.getenv('GITHUB_URL', 'https://github.com').rstrip('/')
@@ -140,7 +147,7 @@ def _github_get(path, params=None):
     import requests
     url = f'{GITHUB_API}{path}'
     try:
-        r = requests.get(url, headers=_headers(), params=params, timeout=15)
+        r = requests.get(url, headers=_headers(), params=params, timeout=15, verify=SSL_VERIFY)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.HTTPError as e:
@@ -156,7 +163,7 @@ def _github_post(path, data=None):
     import requests
     url = f'{GITHUB_API}{path}'
     try:
-        r = requests.post(url, headers=_headers(), json=data, timeout=15)
+        r = requests.post(url, headers=_headers(), json=data, timeout=15, verify=SSL_VERIFY)
         return r
     except Exception as e:
         print(f"[GitHub API] POST error for {path}: {e}")
@@ -284,6 +291,7 @@ def auth_callback():
                 'redirect_uri': _get_callback_url(),
             },
             timeout=15,
+            verify=SSL_VERIFY,
         )
         token_data = token_response.json()
 
@@ -304,6 +312,7 @@ def auth_callback():
                 'Accept': 'application/vnd.github.v3+json',
             },
             timeout=10,
+            verify=SSL_VERIFY,
         )
         if user_response.status_code == 200:
             user_data = user_response.json()
