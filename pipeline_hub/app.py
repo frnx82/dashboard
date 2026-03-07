@@ -40,8 +40,16 @@ GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET', '')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 GITHUB_ORG = os.getenv('GITHUB_ORG', '')
 GITHUB_REPOS = [r.strip() for r in os.getenv('GITHUB_REPOS', '').split(',') if r.strip()]
-GITHUB_API = 'https://api.github.com'
 BASE_URL = os.getenv('BASE_URL', '').rstrip('/')  # e.g. https://pipeline-hub.example.com
+
+# GitHub Enterprise support — set GITHUB_URL to your GHE instance
+# e.g. https://github.yourcompany.com
+GITHUB_URL = os.getenv('GITHUB_URL', 'https://github.com').rstrip('/')
+if GITHUB_URL == 'https://github.com':
+    GITHUB_API = 'https://api.github.com'
+else:
+    # GitHub Enterprise uses /api/v3 path on the same host
+    GITHUB_API = f'{GITHUB_URL}/api/v3'
 
 # Flask session secret — required for OAuth mode, auto-generated if not set
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
@@ -52,6 +60,8 @@ AUTH_MODE = 'oauth' if (GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET) else 'pat'
 if AUTH_MODE == 'oauth':
     callback_url = f'{BASE_URL}/auth/callback' if BASE_URL else '(auto-detected)'
     print(f"[Pipeline Hub] OAuth mode — Client ID: {GITHUB_CLIENT_ID[:8]}...")
+    print(f"    GitHub URL: {GITHUB_URL}")
+    print(f"    API base:   {GITHUB_API}")
     print(f"    Callback URL: {callback_url}")
     print(f"    Users will log in with their GitHub accounts.")
     if not BASE_URL:
@@ -233,7 +243,7 @@ def login():
         'scope': 'repo workflow',
         'state': state,
     }
-    github_auth_url = f'https://github.com/login/oauth/authorize?{urlencode(params)}'
+    github_auth_url = f'{GITHUB_URL}/login/oauth/authorize?{urlencode(params)}'
     return redirect(github_auth_url)
 
 
@@ -265,7 +275,7 @@ def auth_callback():
     # Exchange the code for an access token
     try:
         token_response = requests.post(
-            'https://github.com/login/oauth/access_token',
+            f'{GITHUB_URL}/login/oauth/access_token',
             headers={'Accept': 'application/json'},
             data={
                 'client_id': GITHUB_CLIENT_ID,
