@@ -13,6 +13,8 @@ Authentication Modes:
 Other Environment Variables:
     GITHUB_ORG         — GitHub org/user to list repos from (optional)
     GITHUB_REPOS       — Comma-separated list of specific repos (optional)
+    BASE_URL           — External URL of the app (e.g. https://pipeline-hub.example.com)
+                          Required for OAuth behind a reverse proxy / Ingress.
     PIPELINE_HUB_PORT  — Port to run on (default: 9090)
 
 For local development without a GitHub token, use mock_app.py instead.
@@ -26,6 +28,10 @@ from urllib.parse import urlencode
 
 app = Flask(__name__)
 
+# Support running behind a reverse proxy / Ingress
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────────────────────────────────────
@@ -35,6 +41,7 @@ GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 GITHUB_ORG = os.getenv('GITHUB_ORG', '')
 GITHUB_REPOS = [r.strip() for r in os.getenv('GITHUB_REPOS', '').split(',') if r.strip()]
 GITHUB_API = 'https://api.github.com'
+BASE_URL = os.getenv('BASE_URL', '').rstrip('/')  # e.g. https://pipeline-hub.example.com
 
 # Flask session secret — required for OAuth mode, auto-generated if not set
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
@@ -43,8 +50,12 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
 AUTH_MODE = 'oauth' if (GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET) else 'pat'
 
 if AUTH_MODE == 'oauth':
+    callback_url = f'{BASE_URL}/auth/callback' if BASE_URL else '(auto-detected)'
     print(f"[Pipeline Hub] OAuth mode — Client ID: {GITHUB_CLIENT_ID[:8]}...")
+    print(f"    Callback URL: {callback_url}")
     print(f"    Users will log in with their GitHub accounts.")
+    if not BASE_URL:
+        print(f"    ⚠️  No BASE_URL set. Set it for production: BASE_URL=https://your-domain.com")
 elif GITHUB_TOKEN:
     print(f"[Pipeline Hub] PAT mode — using shared token for all API calls")
     print(f"    org: {GITHUB_ORG or 'auto'}, repos filter: {len(GITHUB_REPOS) or 'all'}")
@@ -88,6 +99,17 @@ def login_required(f):
             return redirect('/login')
         return f(*args, **kwargs)
     return decorated
+
+
+def _get_callback_url():
+    """Get the OAuth callback URL.
+    
+    Uses BASE_URL if set (required for K8s/Ingress/proxy deployments).
+    Falls back to url_for() for local development.
+    """
+    if BASE_URL:
+        return f'{BASE_URL}/auth/callback'
+    return url_for('auth_callback', _external=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -207,7 +229,7 @@ def login():
 
     params = {
         'client_id': GITHUB_CLIENT_ID,
-        'redirect_uri': url_for('auth_callback', _external=True),
+        'redirect_uri': _get_callback_url(),
         'scope': 'repo workflow',
         'state': state,
     }
@@ -241,7 +263,7 @@ def auth_callback():
                 'client_id': GITHUB_CLIENT_ID,
                 'client_secret': GITHUB_CLIENT_SECRET,
                 'code': code,
-                'redirect_uri': url_for('auth_callback', _external=True),
+                'redirect_uri': _get_callback_url(),
             },
             timeout=15,
         )
