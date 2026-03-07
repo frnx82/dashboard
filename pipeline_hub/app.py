@@ -237,9 +237,17 @@ def login():
     return redirect(github_auth_url)
 
 
+@app.route('/auth/test')
+def auth_test():
+    """Simple test endpoint to verify /auth/* routing works."""
+    print('[DEBUG] /auth/test was reached!')
+    return jsonify({'status': 'ok', 'message': '/auth/test route is reachable'})
+
+
 @app.route('/auth/callback')
 def auth_callback():
     """Handle the OAuth callback from GitHub."""
+    print(f'[DEBUG] /auth/callback HIT! args={dict(request.args)}')
     import requests
 
     if AUTH_MODE != 'oauth':
