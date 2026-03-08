@@ -328,17 +328,29 @@ def auth_callback():
         return jsonify({'error': 'No authorization code received from GitHub.'}), 400
 
     # Exchange the code for an access token
+    # NOTE: We use a plain requests.post() here instead of the shared `http`
+    # session because `http` has Kerberos (SPNEGO) auth attached. GitHub's
+    # OAuth token endpoint does not support Negotiate auth and will reset
+    # the connection (errno 104) if Kerberos headers are sent.
     try:
-        token_response = http.post(
-            f'{GITHUB_URL}/login/oauth/access_token',
-            headers={'Accept': 'application/json'},
-            data={
-                'client_id': GITHUB_CLIENT_ID,
-                'client_secret': GITHUB_CLIENT_SECRET,
-                'code': code,
-                'redirect_uri': _get_callback_url(),
-            },
-            timeout=15,
+        token_url = f'{GITHUB_URL}/login/oauth/access_token'
+        token_payload = {
+            'client_id': GITHUB_CLIENT_ID,
+            'client_secret': GITHUB_CLIENT_SECRET,
+            'code': code,
+            'redirect_uri': _get_callback_url(),
+        }
+        token_headers = {'Accept': 'application/json'}
+        token_proxies = {'http': PROXY_URL, 'https': PROXY_URL} if PROXY_URL else None
+
+        print(f'[OAuth] Exchanging code for token via {token_url} (proxy: {PROXY_URL or "none"})')
+        token_response = requests.post(
+            token_url,
+            headers=token_headers,
+            data=token_payload,
+            proxies=token_proxies,
+            verify=SSL_VERIFY,
+            timeout=30,
         )
         token_data = token_response.json()
 

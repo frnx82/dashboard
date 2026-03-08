@@ -1,11 +1,20 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install Kerberos system libraries (required by requests-kerberos)
+# Install Kerberos system libraries (required by requests-kerberos / gssapi)
+# krb5-multidev provides the krb5-config binary needed during pip install
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libkrb5-dev gcc && \
+    gcc \
+    pkg-config \
+    python3-dev \
+    libkrb5-dev \
+    krb5-multidev \
+    libgssapi-krb5-2 && \
     rm -rf /var/lib/apt/lists/*
+
+# Verify krb5-config is available before pip install
+RUN which krb5-config || (echo "ERROR: krb5-config not found in PATH" && exit 1)
 
 # Install dependencies
 COPY requirements.txt .
