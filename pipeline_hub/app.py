@@ -15,6 +15,9 @@ Other Environment Variables:
     GITHUB_REPOS       — Comma-separated list of specific repos (optional)
     BASE_URL           — External URL of the app (e.g. https://pipeline-hub.example.com)
                           Required for OAuth behind a reverse proxy / Ingress.
+    PROXY_URL          — Corporate HTTP proxy (e.g. http://proxy.company.com:8080)
+                          Enables Kerberos (SPNEGO) proxy authentication.
+    SSL_VERIFY         — Set to 'false' to disable SSL cert verification (default: true)
     PIPELINE_HUB_PORT  — Port to run on (default: 9090)
 
 For local development without a GitHub token, use mock_app.py instead.
@@ -22,7 +25,7 @@ For local development without a GitHub token, use mock_app.py instead.
 
 from flask import Flask, render_template, jsonify, request, redirect, session, url_for
 from functools import wraps
-import os, json, base64, secrets
+import os, json, base64, secrets, requests
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -57,6 +60,54 @@ if GITHUB_URL == 'https://github.com':
 else:
     # GitHub Enterprise uses /api/v3 path on the same host
     GITHUB_API = f'{GITHUB_URL}/api/v3'
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Proxy + Kerberos — create a shared requests.Session
+# ──────────────────────────────────────────────────────────────────────────────
+# If PROXY_URL is set (e.g. http://proxy.yourcompany.com:8080), the session
+# will route all HTTPS traffic through that proxy and authenticate using
+# Kerberos (SPNEGO / Negotiate), which is required in many corporate networks.
+#
+# Env vars:
+#   PROXY_URL       — corporate proxy (e.g. http://proxy.yourcompany.com:8080)
+#   SSL_VERIFY      — set to 'false' to disable cert verification (see above)
+# ──────────────────────────────────────────────────────────────────────────────
+
+PROXY_URL = os.getenv('PROXY_URL', '')
+
+def _build_session():
+    """Build a requests.Session with optional Kerberos proxy authentication."""
+    s = requests.Session()
+    s.verify = SSL_VERIFY
+
+    if PROXY_URL:
+        # Set proxy for both HTTP and HTTPS
+        s.proxies = {
+            'http': PROXY_URL,
+            'https': PROXY_URL,
+        }
+        try:
+            from requests_kerberos import HTTPKerberosAuth, OPTIONAL
+            from requests.adapters import HTTPAdapter
+
+            # Mount an adapter so every request goes through the session
+            adapter = HTTPAdapter(max_retries=3)
+            s.mount('https://', adapter)
+            s.mount('http://', adapter)
+
+            # Use Kerberos for proxy authentication (Negotiate / SPNEGO)
+            s.auth = HTTPKerberosAuth(mutual_authentication=OPTIONAL)
+            print(f'[Pipeline Hub] ✅ Kerberos proxy auth enabled — proxy: {PROXY_URL}')
+        except ImportError:
+            print(f'[Pipeline Hub] ⚠️  requests-kerberos not installed. Proxy set but Kerberos auth unavailable.')
+            print(f'    Install it: pip install requests-kerberos')
+    else:
+        print('[Pipeline Hub] ℹ️  No PROXY_URL set — direct connections to GitHub.')
+
+    return s
+
+# Shared session used by all API calls
+http = _build_session()
 
 # Flask session secret — required for OAuth mode, auto-generated if not set
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
@@ -144,10 +195,9 @@ def _headers():
 
 def _github_get(path, params=None):
     """GET request to GitHub API with error handling."""
-    import requests
     url = f'{GITHUB_API}{path}'
     try:
-        r = requests.get(url, headers=_headers(), params=params, timeout=15, verify=SSL_VERIFY)
+        r = http.get(url, headers=_headers(), params=params, timeout=15)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.HTTPError as e:
@@ -160,10 +210,9 @@ def _github_get(path, params=None):
 
 def _github_post(path, data=None):
     """POST request to GitHub API."""
-    import requests
     url = f'{GITHUB_API}{path}'
     try:
-        r = requests.post(url, headers=_headers(), json=data, timeout=15, verify=SSL_VERIFY)
+        r = http.post(url, headers=_headers(), json=data, timeout=15)
         return r
     except Exception as e:
         print(f"[GitHub API] POST error for {path}: {e}")
@@ -265,7 +314,6 @@ def auth_test():
 def auth_callback():
     """Handle the OAuth callback from GitHub."""
     print(f'[DEBUG] /auth/callback HIT! args={dict(request.args)}')
-    import requests
 
     if AUTH_MODE != 'oauth':
         return redirect('/')
@@ -281,7 +329,7 @@ def auth_callback():
 
     # Exchange the code for an access token
     try:
-        token_response = requests.post(
+        token_response = http.post(
             f'{GITHUB_URL}/login/oauth/access_token',
             headers={'Accept': 'application/json'},
             data={
@@ -291,7 +339,6 @@ def auth_callback():
                 'redirect_uri': _get_callback_url(),
             },
             timeout=15,
-            verify=SSL_VERIFY,
         )
         token_data = token_response.json()
 
@@ -305,14 +352,13 @@ def auth_callback():
         session['github_token'] = access_token
 
         # Fetch user info and store in session
-        user_response = requests.get(
+        user_response = http.get(
             f'{GITHUB_API}/user',
             headers={
                 'Authorization': f'token {access_token}',
                 'Accept': 'application/vnd.github.v3+json',
             },
             timeout=10,
-            verify=SSL_VERIFY,
         )
         if user_response.status_code == 200:
             user_data = user_response.json()
