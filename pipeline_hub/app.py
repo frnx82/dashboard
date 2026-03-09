@@ -327,11 +327,16 @@ def auth_callback():
     if not code:
         return jsonify({'error': 'No authorization code received from GitHub.'}), 400
 
-    # Exchange the code for an access token
-    # NOTE: We use a plain requests.post() here instead of the shared `http`
-    # session because `http` has Kerberos (SPNEGO) auth attached. GitHub's
-    # OAuth token endpoint does not support Negotiate auth and will reset
-    # the connection (errno 104) if Kerberos headers are sent.
+    # Exchange the code for an access token.
+    #
+    # We use a SEPARATE session here instead of the shared `http` session
+    # because `http` has HTTPAdapter(max_retries=3) which conflicts with
+    # HTTPKerberosAuth's 407 proxy-auth retry — the adapter retries the
+    # raw connection while Kerberos tries to resend with auth headers,
+    # corrupting the CONNECT tunnel (errno 104, connection reset).
+    #
+    # This OAuth session has proxy + Kerberos (for proxy auth) but NO
+    # retry adapter, so Kerberos can cleanly handle the 407 handshake.
     try:
         token_url = f'{GITHUB_URL}/login/oauth/access_token'
         token_payload = {
@@ -340,18 +345,29 @@ def auth_callback():
             'code': code,
             'redirect_uri': _get_callback_url(),
         }
-        token_headers = {'Accept': 'application/json'}
-        token_proxies = {'http': PROXY_URL, 'https': PROXY_URL} if PROXY_URL else None
+
+        # Build a dedicated session for OAuth token exchange
+        oauth_http = requests.Session()
+        oauth_http.verify = SSL_VERIFY
+        if PROXY_URL:
+            oauth_http.proxies = {'http': PROXY_URL, 'https': PROXY_URL}
+            try:
+                from requests_kerberos import HTTPKerberosAuth, OPTIONAL
+                oauth_http.auth = HTTPKerberosAuth(
+                    mutual_authentication=OPTIONAL,
+                    force_preemptive=False,
+                )
+            except ImportError:
+                pass
 
         print(f'[OAuth] Exchanging code for token via {token_url} (proxy: {PROXY_URL or "none"})')
-        token_response = requests.post(
+        token_response = oauth_http.post(
             token_url,
-            headers=token_headers,
+            headers={'Accept': 'application/json'},
             data=token_payload,
-            proxies=token_proxies,
-            verify=SSL_VERIFY,
             timeout=30,
         )
+        oauth_http.close()
         token_data = token_response.json()
 
         if 'access_token' not in token_data:
