@@ -1,0 +1,52 @@
+# ──────────────────────────────────────────────────────────────────
+# Istio Egress — Allow Pipeline Hub to reach github.com
+# ──────────────────────────────────────────────────────────────────
+# Required when Istio outboundTrafficPolicy is REGISTRY_ONLY.
+# Without this, the sidecar returns 404 for any external HTTPS host
+# not registered in the mesh.
+#
+# Apply in your Pipeline Hub namespace:
+#   kubectl apply -f istio-github-egress.yaml -n <your-namespace>
+# ──────────────────────────────────────────────────────────────────
+
+# 1. ServiceEntry — Register github.com + api.github.com as known hosts
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: github-com
+spec:
+  hosts:
+  - github.com
+  - api.github.com
+  location: MESH_EXTERNAL
+  ports:
+  - number: 443
+    name: https
+    protocol: TLS
+  resolution: DNS
+
+---
+# 2. DestinationRule — TLS passthrough to github.com
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: github-com
+spec:
+  host: github.com
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: github.com
+
+---
+# 3. DestinationRule — TLS passthrough to api.github.com
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: api-github-com
+spec:
+  host: api.github.com
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: api.github.com

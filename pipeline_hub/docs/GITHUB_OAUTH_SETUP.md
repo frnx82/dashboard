@@ -261,3 +261,121 @@ docker run -d \
   -p 9090:9090 \
   pipeline-hub:latest
 ```
+
+---
+
+## Step 6 — Istio Service Mesh Egress (GDC / Anthos Clusters)
+
+If Pipeline Hub is deployed on a **GDC cluster** or any Kubernetes cluster with **Istio service mesh** enabled, outbound traffic to `github.com` may be blocked by the Istio sidecar proxy.
+
+### Symptoms
+
+```
+404 Not Found
+Max retries exceeded — host: github.com port: 443 /login/oauth/access_token
+Caused by ProxyError — Unable to connect to proxy
+OSError: Tunnel connection failed: 404 Not Found
+```
+
+- OAuth login redirects to GitHub successfully, but the **token exchange** fails
+- `curl https://github.com` from inside the pod also fails
+- The error occurs even with `PROXY_URL` correctly configured
+
+### Root Cause
+
+When Istio's `outboundTrafficPolicy.mode` is set to `REGISTRY_ONLY` (common in enterprise clusters), the Envoy sidecar proxy blocks all outbound traffic to hosts **not registered** in the mesh. Since `github.com` and `api.github.com` are external, the sidecar returns a **404** — which appears as a proxy tunnel failure to your application.
+
+```
+Pod App → [Istio Sidecar → 404 ❌] → github.com
+```
+
+### Check Your Cluster's Outbound Policy
+
+```bash
+kubectl get configmap istio -n istio-system -o jsonpath='{.data.mesh}' | grep outboundTrafficPolicy
+```
+
+- `REGISTRY_ONLY` → **ServiceEntry is required** (most enterprise clusters)
+- `ALLOW_ANY` → ServiceEntry is optional but recommended
+
+### Fix — ServiceEntry + DestinationRule
+
+Create a file called `istio-github-egress.yaml` (already included in `manifests/`):
+
+```yaml
+# ServiceEntry — Register github.com + api.github.com as known external hosts
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: github-com
+spec:
+  hosts:
+  - github.com
+  - api.github.com
+  location: MESH_EXTERNAL
+  ports:
+  - number: 443
+    name: https
+    protocol: TLS
+  resolution: DNS
+---
+# DestinationRule — TLS passthrough to github.com
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: github-com
+spec:
+  host: github.com
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: github.com
+---
+# DestinationRule — TLS passthrough to api.github.com
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: api-github-com
+spec:
+  host: api.github.com
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: api.github.com
+```
+
+### Apply It
+
+```bash
+kubectl apply -f manifests/istio-github-egress.yaml -n <your-namespace>
+```
+
+### Verify Connectivity
+
+```bash
+# Get your pod name
+POD=$(kubectl get pod -l app=pipeline-hub -n <namespace> -o jsonpath='{.items[0].metadata.name}')
+
+# Test GitHub OAuth endpoint
+kubectl exec $POD -n <namespace> -- curl -v https://github.com/login/oauth/access_token 2>&1 | head -20
+
+# Test GitHub API
+kubectl exec $POD -n <namespace> -- curl -v https://api.github.com 2>&1 | head -20
+```
+
+A successful TLS handshake (even with a 4xx response) confirms the sidecar is allowing the traffic through.
+
+### Do I Also Need a Firewall Whitelist?
+
+**Possibly yes.** The ServiceEntry + DestinationRule fixes the **Istio-level block**, but there may be a separate **network firewall** between your GDC cluster and the internet:
+
+| Layer | Blocks traffic at | Fixed by |
+|---|---|---|
+| Istio Sidecar | Mesh level (404 error) | ServiceEntry + DestinationRule |
+| Network Firewall | Cluster egress level (timeout/refused) | Firewall whitelist request |
+
+If you still get connection timeouts after applying the Istio manifests, a firewall rule is needed to whitelist your cluster's egress static IP to `github.com:443`.
+
+### GitHub Enterprise Note
+
+If you use **GitHub Enterprise** (e.g., `github.yourcompany.com`), replace the hostnames in the ServiceEntry and DestinationRule with your GHE domain. Internal GHE instances may not need a firewall request if they're on the corporate network, but the **ServiceEntry is still required** for Istio to route traffic correctly.
