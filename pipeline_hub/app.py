@@ -25,7 +25,7 @@ For local development without a GitHub token, use mock_app.py instead.
 
 from flask import Flask, render_template, jsonify, request, redirect, session, url_for
 from functools import wraps
-import os, json, base64, secrets, requests
+import os, json, base64, secrets, requests, time, threading
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -111,6 +111,37 @@ http = _build_session()
 
 # Flask session secret — required for OAuth mode, auto-generated if not set
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+
+# ──────────────────────────────────────────────────────────────────────────────
+# In-memory TTL Cache — avoids repeated GitHub API calls
+# ──────────────────────────────────────────────────────────────────────────────
+
+_cache = {}
+_cache_lock = threading.Lock()
+CACHE_TTL = int(os.getenv('CACHE_TTL', '300'))  # 5 minutes default
+
+def cache_get(key):
+    """Get a value from cache if it exists and hasn't expired."""
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry and time.time() - entry['ts'] < CACHE_TTL:
+            return entry['data']
+    return None
+
+def cache_set(key, data):
+    """Store a value in cache with current timestamp."""
+    with _cache_lock:
+        _cache[key] = {'data': data, 'ts': time.time()}
+
+def cache_clear(prefix=None):
+    """Clear cache entries. If prefix given, only clear matching keys."""
+    with _cache_lock:
+        if prefix:
+            keys_to_delete = [k for k in _cache if k.startswith(prefix)]
+            for k in keys_to_delete:
+                del _cache[k]
+        else:
+            _cache.clear()
 
 # Determine auth mode
 AUTH_MODE = 'oauth' if (GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET) else 'pat'
@@ -494,6 +525,13 @@ def get_user():
 @login_required
 def list_repos():
     try:
+        # Check cache first — avoids re-fetching on every page load / stats call
+        cache_key = f'repos:{get_token()[:8] if get_token() else "anon"}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            print(f"[list_repos] ⚡ Returning {len(cached)} repos from cache")
+            return jsonify(cached)
+
         repos = []
 
         if GITHUB_REPOS:
@@ -503,6 +541,8 @@ def list_repos():
                 try:
                     path = f'/repos/{repo_name}' if '/' in repo_name else f'/repos/{GITHUB_ORG}/{repo_name}'
                     data = _github_get(path)
+                    if data.get('archived'):
+                        continue
                     repos.append({
                         'name': data['name'],
                         'full_name': data['full_name'],
@@ -522,7 +562,7 @@ def list_repos():
                     data = _github_get(f'/orgs/{GITHUB_ORG}/repos', {
                         'per_page': 100, 'page': page, 'sort': 'updated', 'type': 'all'
                     })
-                    if not data:
+                    if not data or not isinstance(data, list):
                         break
                     for r in data:
                         if r.get('archived'):
@@ -555,7 +595,6 @@ def list_repos():
                     for r in (all_user_repos if isinstance(all_user_repos, list) else []):
                         if r.get('archived'):
                             continue
-                        # Filter to only repos from the configured org
                         if r.get('owner', {}).get('login', '').lower() == GITHUB_ORG.lower():
                             repos.append({
                                 'name': r['name'],
@@ -588,6 +627,10 @@ def list_repos():
 
         print(f"[list_repos] ✅ Returning {len(repos)} repos")
         repos.sort(key=lambda r: r['name'])
+
+        # Cache the result
+        cache_set(cache_key, repos)
+
         return jsonify(repos)
 
     except Exception as e:
@@ -712,70 +755,142 @@ def debug_auth():
 @app.route('/api/repos/<owner>/<repo>/workflows')
 @login_required
 def list_workflows(owner, repo):
+    """List workflows for a repo — optimized with caching and batch run fetching.
+    
+    Optimizations vs original:
+    - Cache results for CACHE_TTL seconds
+    - Fetch recent runs in ONE batch call instead of per-workflow
+    - Defer workflow YAML parsing to /api/repos/<owner>/<repo>/workflows/<id>/inputs
+    """
     try:
+        cache_key = f'workflows:{owner}/{repo}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            print(f"[list_workflows] ⚡ Returning {len(cached)} workflows for {owner}/{repo} from cache")
+            return jsonify(cached)
+
+        t_start = time.time()
+
+        # 1. Fetch workflow list (1 API call)
         data = _github_get(f'/repos/{owner}/{repo}/actions/workflows')
+        active_workflows = [w for w in data.get('workflows', []) if w.get('state') == 'active']
+
+        # 2. Fetch recent runs in ONE batch call instead of per-workflow (1 API call)
+        #    This replaces N individual /runs calls with a single call
+        last_run_by_workflow = {}
+        try:
+            runs_data = _github_get(f'/repos/{owner}/{repo}/actions/runs', {'per_page': 50})
+            for run in runs_data.get('workflow_runs', []):
+                wf_id = run.get('workflow_id')
+                if wf_id and wf_id not in last_run_by_workflow:
+                    last_run_by_workflow[wf_id] = run  # Keep only the most recent run per workflow
+        except Exception as e:
+            print(f"[list_workflows] ⚠️  Failed to batch-fetch runs: {e}")
+
+        # 3. Build workflow list (0 additional API calls)
         workflows = []
-
-        for w in data.get('workflows', []):
-            if w.get('state') != 'active':
-                continue
-
-            # Get last run for this workflow
+        for w in active_workflows:
             last_conclusion = None
             last_run_ago = "Never"
             last_run_by = "--"
             duration = "--"
             branch = ""
 
-            try:
-                runs_data = _github_get(
-                    f'/repos/{owner}/{repo}/actions/workflows/{w["id"]}/runs',
-                    {'per_page': 1}
-                )
-                runs = runs_data.get('workflow_runs', [])
-                if runs:
-                    run = runs[0]
-                    last_conclusion = run.get('conclusion') or run.get('status')
-                    last_run_ago = _time_ago(run.get('created_at'))
-                    last_run_by = (run.get('actor') or {}).get('login', '--')
-                    branch = run.get('head_branch', '')
-                    if run.get('created_at') and run.get('updated_at'):
-                        try:
-                            start = datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
-                            end = datetime.fromisoformat(run['updated_at'].replace('Z', '+00:00'))
-                            duration = _format_duration((end - start).total_seconds())
-                        except Exception:
-                            pass
-            except Exception as e:
-                print(f"[list_workflows] Error getting runs for {w['name']}: {e}")
-
-            # Parse workflow_dispatch inputs from the YAML file
-            dispatch_inputs = []
-            try:
-                file_data = _github_get(f'/repos/{owner}/{repo}/contents/{w["path"]}')
-                if file_data.get('content'):
-                    dispatch_inputs = _parse_workflow_inputs(file_data['content'])
-            except Exception:
-                pass
+            run = last_run_by_workflow.get(w['id'])
+            if run:
+                last_conclusion = run.get('conclusion') or run.get('status')
+                last_run_ago = _time_ago(run.get('created_at'))
+                last_run_by = (run.get('actor') or {}).get('login', '--')
+                branch = run.get('head_branch', '')
+                if run.get('created_at') and run.get('updated_at'):
+                    try:
+                        start = datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
+                        end = datetime.fromisoformat(run['updated_at'].replace('Z', '+00:00'))
+                        duration = _format_duration((end - start).total_seconds())
+                    except Exception:
+                        pass
 
             workflows.append({
                 'id': w['id'],
                 'name': w['name'],
                 'file': w['path'].split('/')[-1],
+                'path': w['path'],
                 'state': w['state'],
                 'last_conclusion': last_conclusion,
                 'last_run_ago': last_run_ago,
                 'duration': duration,
                 'last_run_by': last_run_by,
                 'branch': branch,
-                'dispatch_inputs': dispatch_inputs,
+                'dispatch_inputs': [],  # Loaded on-demand via /inputs endpoint
             })
 
+        elapsed = time.time() - t_start
+        print(f"[list_workflows] ✅ {owner}/{repo}: {len(workflows)} workflows in {elapsed:.1f}s (2 API calls)")
+
+        cache_set(cache_key, workflows)
         return jsonify(workflows)
 
     except Exception as e:
-        print(f"[list_workflows] Error: {e}")
+        print(f"[list_workflows] ❌ Error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/repos/<owner>/<repo>/workflows/<int:workflow_id>/inputs')
+@login_required
+def get_workflow_inputs(owner, repo, workflow_id):
+    """Fetch workflow_dispatch inputs on-demand (only when user clicks Run).
+    
+    This is deferred from the workflow listing to avoid N extra API calls
+    (one per workflow) just to parse YAML files that are rarely needed.
+    """
+    try:
+        cache_key = f'inputs:{owner}/{repo}/{workflow_id}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        # Find the workflow to get its file path
+        data = _github_get(f'/repos/{owner}/{repo}/actions/workflows/{workflow_id}')
+        wf_path = data.get('path', '')
+        if not wf_path:
+            return jsonify([])
+
+        # Fetch the YAML file and parse inputs
+        file_data = _github_get(f'/repos/{owner}/{repo}/contents/{wf_path}')
+        inputs = []
+        if file_data.get('content'):
+            inputs = _parse_workflow_inputs(file_data['content'])
+
+        cache_set(cache_key, inputs)
+        return jsonify(inputs)
+
+    except Exception as e:
+        print(f"[get_inputs] Error for workflow {workflow_id}: {e}")
+        return jsonify([])
+
+@app.route('/api/repos/<owner>/<repo>/branches')
+@login_required
+def list_branches(owner, repo):
+    """Fetch branches for a repo (cached)."""
+    try:
+        cache_key = f'branches:{owner}/{repo}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        data = _github_get(f'/repos/{owner}/{repo}/branches', {'per_page': 100})
+        branches = [b.get('name', '') for b in (data if isinstance(data, list) else [])]
+        
+        # Sort: default branch first, then common env branches, then alphabetical
+        priority = {'main': 0, 'master': 0, 'develop': 1, 'dev': 1, 'uat': 2, 'staging': 2, 'prod': 3, 'production': 3}
+        branches.sort(key=lambda b: (priority.get(b.lower(), 10), b.lower()))
+        
+        cache_set(cache_key, branches)
+        return jsonify(branches)
+
+    except Exception as e:
+        print(f"[list_branches] Error for {owner}/{repo}: {e}")
+        return jsonify([])
 
 
 @app.route('/api/repos/<owner>/<repo>/runs')
@@ -851,33 +966,135 @@ def trigger_workflow(owner, repo, workflow_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/repos/<owner>/<repo>/runs/<int:run_id>/rerun', methods=['POST'])
+@login_required
+def rerun_all_jobs(owner, repo, run_id):
+    """Re-run ALL jobs in a workflow run."""
+    try:
+        response = _github_post(f'/repos/{owner}/{repo}/actions/runs/{run_id}/rerun', {})
+        triggered_by = session.get('github_user', {}).get('login', 'unknown')
+
+        if response.status_code == 201:
+            print(f"[rerun] {triggered_by} re-ran all jobs for run #{run_id} on {owner}/{repo}")
+            # Invalidate workflow cache so next refresh shows updated status
+            cache_clear(f'workflows:{owner}/{repo}')
+            return jsonify({'status': 'rerun', 'message': f'✅ Re-running all jobs for run #{run_id}'})
+        elif response.status_code == 403:
+            return jsonify({'error': 'Permission denied. You need write access to re-run workflows.'}), 403
+        elif response.status_code == 409:
+            return jsonify({'error': 'Cannot re-run: the workflow run is still in progress.'}), 409
+        else:
+            detail = ''
+            try:
+                detail = response.json().get('message', response.text[:200])
+            except Exception:
+                detail = response.text[:200]
+            return jsonify({'error': f'GitHub returned {response.status_code}: {detail}'}), response.status_code
+
+    except Exception as e:
+        print(f"[rerun] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/repos/<owner>/<repo>/runs/<int:run_id>/rerun-failed', methods=['POST'])
+@login_required
+def rerun_failed_jobs(owner, repo, run_id):
+    """Re-run only FAILED jobs in a workflow run.
+    
+    This is especially useful for Terraform workflows where a transient
+    provider error shouldn't force a full re-plan.
+    """
+    try:
+        response = _github_post(f'/repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs', {})
+        triggered_by = session.get('github_user', {}).get('login', 'unknown')
+
+        if response.status_code == 201:
+            print(f"[rerun-failed] {triggered_by} re-ran failed jobs for run #{run_id} on {owner}/{repo}")
+            cache_clear(f'workflows:{owner}/{repo}')
+            return jsonify({'status': 'rerun', 'message': f'✅ Re-running failed jobs for run #{run_id}'})
+        elif response.status_code == 403:
+            return jsonify({'error': 'Permission denied. You need write access to re-run workflows.'}), 403
+        elif response.status_code == 409:
+            return jsonify({'error': 'Cannot re-run: the workflow run is still in progress.'}), 409
+        else:
+            detail = ''
+            try:
+                detail = response.json().get('message', response.text[:200])
+            except Exception:
+                detail = response.text[:200]
+            return jsonify({'error': f'GitHub returned {response.status_code}: {detail}'}), response.status_code
+
+    except Exception as e:
+        print(f"[rerun-failed] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/stats')
 @login_required
 def global_stats():
-    """Lightweight stats that don't make per-workflow API calls.
+    """Smart stats using batch /actions/runs calls.
     
-    Previously this iterated all repos × all workflows × last run,
-    making 200+ API calls per request and crashing with large orgs.
-    Now it just counts repos and returns placeholder stats until
-    individual repo data is loaded by the frontend.
+    Uses 1 API call per repo (max 15 repos) to get recent runs,
+    then deduces per-workflow latest status from the batch results.
+    Much cheaper than the old per-workflow approach (~15 calls vs 200+).
     """
     try:
+        # Check cache first
+        cache_key = f'stats:{get_token()[:8] if get_token() else "anon"}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
         repos_resp = list_repos()
         repos = repos_resp.get_json()
         if isinstance(repos, dict) and 'error' in repos:
             return jsonify(repos), 500
 
-        total_repos = len(repos) if isinstance(repos, list) else 0
-        print(f"[stats] Returning stats for {total_repos} repos (lightweight mode)")
+        repo_list = repos if isinstance(repos, list) else []
+        total_repos = len(repo_list)
+        max_scan = min(total_repos, 15)  # Limit to 15 repos
 
-        return jsonify({
+        total_workflows = 0
+        passing = 0
+        failing = 0
+
+        for repo in repo_list[:max_scan]:
+            owner, name = repo['full_name'].split('/')
+            try:
+                # 1 API call per repo — get recent runs and deduce workflow status
+                runs_data = _github_get(f'/repos/{owner}/{name}/actions/runs', {'per_page': 50})
+                
+                # Group by workflow_id, keep only the latest run per workflow
+                latest_by_wf = {}
+                for run in runs_data.get('workflow_runs', []):
+                    wf_id = run.get('workflow_id')
+                    if wf_id and wf_id not in latest_by_wf:
+                        latest_by_wf[wf_id] = run
+
+                for wf_id, run in latest_by_wf.items():
+                    total_workflows += 1
+                    conclusion = run.get('conclusion')
+                    if conclusion == 'success':
+                        passing += 1
+                    elif conclusion == 'failure':
+                        failing += 1
+            except Exception as e:
+                print(f"[stats] Error scanning {repo['full_name']}: {e}")
+
+        result = {
             'total_repos': total_repos,
-            'total_workflows': 0,  # Will be populated by frontend as repos are clicked
-            'passing': 0,
-            'failing': 0,
-            'success_rate': 0,
-            'mode': 'lightweight',
-        })
+            'total_workflows': total_workflows,
+            'passing': passing,
+            'failing': failing,
+            'success_rate': round(passing / total_workflows * 100, 1) if total_workflows else 0,
+            'repos_scanned': max_scan,
+        }
+
+        print(f"[stats] ✅ Scanned {max_scan} repos: {total_workflows} workflows, "
+              f"{passing} passing, {failing} failing")
+
+        cache_set(cache_key, result)
+        return jsonify(result)
 
     except Exception as e:
         print(f"[stats] ❌ Error: {e}")

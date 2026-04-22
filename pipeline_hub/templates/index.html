@@ -13,7 +13,8 @@
             box-sizing: border-box;
         }
 
-        :root {
+        :root,
+        [data-theme="dark"] {
             --bg-primary: #0d1117;
             --bg-secondary: #161b22;
             --bg-tertiary: #1c2333;
@@ -35,6 +36,34 @@
             --glow-blue: rgba(88, 166, 255, 0.15);
             --glow-success: rgba(63, 185, 80, 0.12);
             --glow-failure: rgba(248, 81, 73, 0.12);
+            --scrollbar-thumb: #30363d;
+            --shadow-card: rgba(0, 0, 0, 0.3);
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #f6f8fa;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f0f3f6;
+            --bg-card: #ffffff;
+            --bg-hover: #eaeef2;
+            --border: #d0d7de;
+            --border-light: #bbc0c5;
+            --text-primary: #1f2328;
+            --text-secondary: #656d76;
+            --text-muted: #8b949e;
+            --accent-blue: #0969da;
+            --accent-teal: #1a8a7a;
+            --accent-purple: #8250df;
+            --success: #1a7f37;
+            --failure: #cf222e;
+            --warning: #9a6700;
+            --in-progress: #0969da;
+            --queued: #8b949e;
+            --glow-blue: rgba(9, 105, 218, 0.08);
+            --glow-success: rgba(26, 127, 55, 0.08);
+            --glow-failure: rgba(207, 34, 46, 0.08);
+            --scrollbar-thumb: #bbc0c5;
+            --shadow-card: rgba(0, 0, 0, 0.06);
         }
 
         body {
@@ -503,6 +532,18 @@
             font-size: 12px;
         }
 
+        .branch-badge.default {
+            border-color: rgba(63, 185, 80, 0.4);
+            color: var(--success);
+            background: rgba(63, 185, 80, 0.08);
+        }
+
+        .branch-badge.env {
+            border-color: rgba(210, 153, 34, 0.4);
+            color: #d29922;
+            background: rgba(210, 153, 34, 0.08);
+        }
+
         .visibility-badge {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -797,6 +838,49 @@
             font-size: 12px;
         }
 
+        .rerun-actions {
+            display: flex;
+            gap: 6px;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        .rerun-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 3px 10px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .rerun-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-light);
+            color: var(--text-primary);
+            transform: translateY(-1px);
+        }
+
+        .rerun-btn.rerun-failed {
+            border-color: rgba(248, 81, 73, 0.3);
+            color: var(--failure);
+        }
+
+        .rerun-btn.rerun-failed:hover {
+            background: rgba(248, 81, 73, 0.1);
+            border-color: var(--failure);
+        }
+
+        .rerun-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         /* ── Input Modal ────────────────────────────────── */
         .modal-overlay {
             display: none;
@@ -1014,7 +1098,62 @@
         ::-webkit-scrollbar-thumb:hover {
             background: var(--border-light);
         }
+
+        /* ── Theme Toggle ──────────────────────────────── */
+        .theme-toggle {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .theme-toggle:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-light);
+            transform: rotate(15deg);
+        }
+
+        .theme-icon {
+            transition: transform 0.3s ease;
+            display: block;
+        }
+
+        [data-theme="light"] .section-card {
+            box-shadow: 0 1px 3px var(--shadow-card);
+        }
+
+        [data-theme="light"] .header {
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+
+        [data-theme="light"] .sidebar {
+            box-shadow: 1px 0 3px rgba(0,0,0,0.04);
+        }
+
+        [data-theme="light"] .modal-box {
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+        }
+
+        [data-theme="light"] .toast {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
     </style>
+    <script>
+        // Apply saved theme BEFORE body renders to prevent flash of wrong theme
+        (function() {
+            const saved = localStorage.getItem('pipeline-hub-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', saved);
+        })();
+    </script>
 </head>
 
 <body>
@@ -1033,6 +1172,9 @@
             oninput="filterRepos(this.value)">
         <div class="header-right">
             <div class="header-stats" id="headerStats"></div>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode">
+                <span class="theme-icon" id="themeIcon">🌙</span>
+            </button>
             <div id="headerAuth">
                 <!-- Populated dynamically -->
             </div>
@@ -1083,7 +1225,9 @@
             <div id="modalInputs"></div>
             <div class="input-group">
                 <label>Branch</label>
-                <input type="text" id="modalBranch" value="main">
+                <select id="modalBranch">
+                    <option value="main">main</option>
+                </select>
             </div>
             <div class="modal-actions">
                 <button class="modal-cancel" onclick="closeModal()">Cancel</button>
@@ -1096,14 +1240,15 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
-        // State
         let repos = [];
         let selectedRepo = null;
         let currentWorkflows = [];
+        let repoBranches = [];  // Available branches for the selected repo
         let pendingTrigger = null;
         let refreshInterval = null;
         let currentUser = null;
         let authMode = 'pat';
+        let loadGeneration = 0;  // Incremented on each repo switch to cancel stale requests
 
         const LANG_ICONS = {
             'TypeScript': 'ts', 'Python': 'py', 'Go': 'go', 'HCL': 'hcl',
@@ -1163,11 +1308,10 @@
                 repos = Array.isArray(repoRes) ? repoRes : [];
                 renderRepos(repos);
 
-                // Show repo count immediately
-                renderHeaderStats({
-                    total_repos: repos.length, passing: 0, failing: 0,
-                    success_rate: 0, mode: 'lightweight'
-                });
+                // Show loading indicator while stats fetch in background
+                document.getElementById('headerStats').innerHTML = `
+                    <span class="stat-item" style="color:var(--text-muted)"><div class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px"></div> Loading stats...</span>
+                `;
 
                 // Load full stats in background (non-blocking, won't crash UI)
                 loadStatsBackground();
@@ -1283,32 +1427,96 @@
             selectedRepo = repos.find(r => r.full_name === fullName);
             renderRepos(repos);
 
+            // Cancel any in-flight requests from the previous repo
             if (refreshInterval) clearInterval(refreshInterval);
+            loadGeneration++;  // Stale responses will see a mismatched generation and bail
+            const myGeneration = loadGeneration;
 
             const main = document.getElementById('mainContent');
             main.innerHTML = `<div style="text-align:center;padding:60px"><div class="spinner"></div></div>`;
 
-            await loadRepoData(fullName);
-            refreshInterval = setInterval(() => loadRepoData(fullName), 5000);
+            // Fetch branches in the background (don't block workflow loading)
+            const [owner, repo] = fullName.split('/');
+            fetch(`/api/repos/${owner}/${repo}/branches`)
+                .then(r => r.ok ? r.json() : [])
+                .then(branches => {
+                    if (loadGeneration === myGeneration) {
+                        repoBranches = Array.isArray(branches) ? branches : [];
+                    }
+                })
+                .catch(() => {
+                    if (loadGeneration === myGeneration) repoBranches = [];
+                });
+
+            await loadRepoData(fullName, myGeneration);
+            // Only start refresh if this repo is still selected
+            if (loadGeneration === myGeneration) {
+                refreshInterval = setInterval(() => {
+                    if (loadGeneration === myGeneration) {
+                        loadRepoData(fullName, myGeneration);
+                    } else {
+                        clearInterval(refreshInterval);
+                    }
+                }, 30000);
+            }
         }
 
-        async function loadRepoData(fullName) {
+        async function safeJson(response) {
+            // Safely parse JSON — handles cases where server returns HTML error pages
+            const text = await response.text();
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                console.error('Non-JSON response:', text.substring(0, 200));
+                throw new Error(`Server returned non-JSON response (HTTP ${response.status})`);
+            }
+        }
+
+        async function loadRepoData(fullName, generation) {
             const [owner, repo] = fullName.split('/');
             try {
-                const [workflows, runs] = await Promise.all([
-                    fetch(`/api/repos/${owner}/${repo}/workflows`).then(r => {
-                        if (r.status === 401) { window.location.href = '/login'; throw new Error('auth'); }
-                        return r.json();
-                    }),
-                    fetch(`/api/repos/${owner}/${repo}/runs`).then(r => {
-                        if (r.status === 401) { window.location.href = '/login'; throw new Error('auth'); }
-                        return r.json();
-                    })
+                const [wfRes, runsRes] = await Promise.all([
+                    fetch(`/api/repos/${owner}/${repo}/workflows`),
+                    fetch(`/api/repos/${owner}/${repo}/runs`)
                 ]);
-                currentWorkflows = workflows;
-                renderMainContent(selectedRepo, workflows, runs);
+
+                // Discard if user switched to a different repo while we were fetching
+                if (generation !== undefined && generation !== loadGeneration) return;
+
+                // Check for auth redirect
+                if (wfRes.status === 401 || runsRes.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                const workflows = await safeJson(wfRes);
+                const runs = await safeJson(runsRes);
+
+                // Double-check generation after parsing (parsing takes time too)
+                if (generation !== undefined && generation !== loadGeneration) return;
+
+                // Handle error responses
+                if (workflows.error) throw new Error(workflows.error);
+                if (runs.error) throw new Error(runs.error);
+
+                currentWorkflows = Array.isArray(workflows) ? workflows : [];
+                const runsList = Array.isArray(runs) ? runs : [];
+                renderMainContent(selectedRepo, currentWorkflows, runsList);
             } catch (e) {
-                if (e.message !== 'auth') console.error('Load error:', e);
+                if (generation !== undefined && generation !== loadGeneration) return;
+                if (e.message !== 'auth') {
+                    console.error('Load error:', e);
+                    // Only show error on first load, not on background refresh
+                    const main = document.getElementById('mainContent');
+                    if (main.querySelector('.spinner')) {
+                        main.innerHTML = `
+                            <div class="empty-state">
+                                <div class="icon">⚠️</div>
+                                <h3>Error loading workflows</h3>
+                                <p>${e.message}</p>
+                            </div>`;
+                    }
+                }
             }
         }
 
@@ -1316,10 +1524,23 @@
         function renderMainContent(repo, workflows, runs) {
             const main = document.getElementById('mainContent');
 
+            // Build branch badges from available branches
+            const branchBadges = repoBranches.length > 0
+                ? repoBranches.slice(0, 8).map(b => {
+                    const isDefault = b === repo.default_branch;
+                    const isEnv = ['dev', 'uat', 'staging', 'prod', 'production'].includes(b.toLowerCase());
+                    const cls = isDefault ? 'default' : (isEnv ? 'env' : '');
+                    return `<span class="branch-badge ${cls}" title="${b}">${b}</span>`;
+                  }).join('')
+                : `<span class="branch-badge default">${repo.default_branch}</span>`;
+
             let html = `
             <div class="repo-header">
                 <h1>${repo.name}</h1>
-                <span class="branch-badge">${repo.default_branch}</span>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                    ${branchBadges}
+                    ${repoBranches.length > 8 ? `<span class="branch-badge" style="opacity:0.5">+${repoBranches.length - 8} more</span>` : ''}
+                </div>
                 <span class="visibility-badge">🔒 ${repo.visibility}</span>
             </div>
         `;
@@ -1359,8 +1580,8 @@
                             <td><span class="wf-branch">${w.branch || repo.default_branch}</span></td>
                             <td><span class="wf-by">${w.last_run_by || '--'}</span></td>
                             <td style="text-align:right">
-                                <button class="run-btn" onclick="runWorkflow(${w.id}, '${w.name}', ${hasInputs})"
-                                    title="${hasInputs ? 'Configure and run' : 'Run now'}">
+                                <button class="run-btn" onclick="runWorkflow(${w.id}, '${w.name.replace(/'/g, "\\'")}')"
+                                    title="Run workflow">
                                     <span class="play-icon">▶</span> Run${isProd ? ' ⚠️' : ''}
                                 </button>
                             </td>
@@ -1378,7 +1599,20 @@
             ${runs.map(r => {
                 const status = r.conclusion || r.status || 'queued';
                 const time = formatTime(r.created_at);
-                return `<div class="run-item">
+                const runUrl = r.url || '#';
+                const isFailed = status === 'failure';
+                const isCompleted = status === 'success' || status === 'failure' || status === 'cancelled';
+
+                // Build rerun buttons for completed runs
+                let rerunBtns = '';
+                if (isCompleted) {
+                    rerunBtns += `<button class="rerun-btn" onclick="event.preventDefault();event.stopPropagation();rerunJobs(${r.id}, 'all')" title="Re-run all jobs">🔄 All</button>`;
+                    if (isFailed) {
+                        rerunBtns += `<button class="rerun-btn rerun-failed" onclick="event.preventDefault();event.stopPropagation();rerunJobs(${r.id}, 'failed')" title="Re-run only failed jobs">🔁 Failed</button>`;
+                    }
+                }
+
+                return `<a href="${runUrl}" target="_blank" rel="noopener" class="run-item" style="text-decoration:none;color:inherit;cursor:pointer" title="View logs on GitHub">
                     <span class="run-dot ${status}"></span>
                     <span class="run-name">${r.name}</span>
                     <span class="run-number">#${r.run_number}</span>
@@ -1387,8 +1621,10 @@
                         <span>${r.triggered_by || '--'}</span>
                         <span>${r.duration}</span>
                         <span>${time}</span>
+                        <span style="color:var(--accent-blue);font-size:11px">\u2197 logs</span>
                     </div>
-                </div>`;
+                    ${rerunBtns ? `<div class="rerun-actions">${rerunBtns}</div>` : ''}
+                </a>`;
             }).join('')}
         </div>`;
 
@@ -1410,47 +1646,64 @@
         }
 
         // ── Run Workflow ─────────────────────────────────────
-        function runWorkflow(workflowId, name, hasInputs) {
+        async function runWorkflow(workflowId, name) {
             const wf = currentWorkflows.find(w => w.id === workflowId);
             if (!wf) return;
 
-            if (hasInputs && wf.dispatch_inputs && wf.dispatch_inputs.length > 0) {
-                pendingTrigger = { workflowId, name, repo: selectedRepo.full_name, inputs: wf.dispatch_inputs };
-                document.getElementById('modalTitle').textContent = `Run: ${name}`;
-                document.getElementById('modalSubtitle').textContent = `${selectedRepo.full_name} • ${wf.file}`;
-                document.getElementById('modalBranch').value = selectedRepo.default_branch;
-
-                let inputsHtml = '';
-                wf.dispatch_inputs.forEach(inp => {
-                    if (inp.type === 'choice') {
-                        inputsHtml += `<div class="input-group">
-                        <label>${inp.name}</label>
-                        <select id="input_${inp.name}">
-                            ${inp.options.map(o => `<option value="${o}" ${o === inp.default ? 'selected' : ''}>${o}</option>`).join('')}
-                        </select>
-                    </div>`;
-                    } else if (inp.type === 'boolean') {
-                        inputsHtml += `<div class="input-group">
-                        <label>${inp.name}</label>
-                        <select id="input_${inp.name}">
-                            <option value="false" ${inp.default === 'false' ? 'selected' : ''}>false</option>
-                            <option value="true" ${inp.default === 'true' ? 'selected' : ''}>true</option>
-                        </select>
-                    </div>`;
-                    } else {
-                        inputsHtml += `<div class="input-group">
-                        <label>${inp.name}</label>
-                        <input type="text" id="input_${inp.name}" value="${inp.default || ''}"
-                               placeholder="Enter ${inp.name}...">
-                    </div>`;
-                    }
-                });
-
-                document.getElementById('modalInputs').innerHTML = inputsHtml;
-                document.getElementById('inputModal').classList.add('show');
-            } else {
-                triggerWorkflow(selectedRepo.full_name, workflowId, name, selectedRepo.default_branch, {});
+            // Fetch inputs on-demand from the server
+            const [owner, repo] = selectedRepo.full_name.split('/');
+            try {
+                const inputsRes = await fetch(`/api/repos/${owner}/${repo}/workflows/${workflowId}/inputs`);
+                const inputs = await safeJson(inputsRes);
+                wf.dispatch_inputs = Array.isArray(inputs) ? inputs : [];
+            } catch (e) {
+                console.warn('Failed to load inputs, proceeding without:', e);
+                wf.dispatch_inputs = [];
             }
+
+            // Always show modal so user can pick branch
+            pendingTrigger = { workflowId, name, repo: selectedRepo.full_name, inputs: wf.dispatch_inputs || [] };
+            document.getElementById('modalTitle').textContent = `Run: ${name}`;
+            document.getElementById('modalSubtitle').textContent = `${selectedRepo.full_name} \u2022 ${wf.file}`;
+
+            // Populate branch dropdown with actual repo branches
+            const branchSelect = document.getElementById('modalBranch');
+            const branches = repoBranches.length > 0 ? repoBranches : [selectedRepo.default_branch];
+            branchSelect.innerHTML = branches.map(b => {
+                const isDefault = b === selectedRepo.default_branch;
+                const selected = (wf.branch && b === wf.branch) || (!wf.branch && isDefault) ? 'selected' : '';
+                return `<option value="${b}" ${selected}>${b}${isDefault ? ' (default)' : ''}</option>`;
+            }).join('');
+
+            // Build workflow dispatch inputs
+            let inputsHtml = '';
+            (wf.dispatch_inputs || []).forEach(inp => {
+                if (inp.type === 'choice') {
+                    inputsHtml += `<div class="input-group">
+                    <label>${inp.name}</label>
+                    <select id="input_${inp.name}">
+                        ${inp.options.map(o => `<option value="${o}" ${o === inp.default ? 'selected' : ''}>${o}</option>`).join('')}
+                    </select>
+                </div>`;
+                } else if (inp.type === 'boolean') {
+                    inputsHtml += `<div class="input-group">
+                    <label>${inp.name}</label>
+                    <select id="input_${inp.name}">
+                        <option value="false" ${inp.default === 'false' ? 'selected' : ''}>false</option>
+                        <option value="true" ${inp.default === 'true' ? 'selected' : ''}>true</option>
+                    </select>
+                </div>`;
+                } else {
+                    inputsHtml += `<div class="input-group">
+                    <label>${inp.name}</label>
+                    <input type="text" id="input_${inp.name}" value="${inp.default || ''}"
+                           placeholder="Enter ${inp.name}...">
+                </div>`;
+                }
+            });
+
+            document.getElementById('modalInputs').innerHTML = inputsHtml;
+            document.getElementById('inputModal').classList.add('show');
         }
 
         function closeModal() {
@@ -1495,6 +1748,40 @@
             }
         }
 
+        // ── Rerun Jobs ──────────────────────────────────────
+        async function rerunJobs(runId, mode) {
+            if (!selectedRepo) return;
+            const [owner, repo] = selectedRepo.full_name.split('/');
+            const endpoint = mode === 'failed'
+                ? `/api/repos/${owner}/${repo}/runs/${runId}/rerun-failed`
+                : `/api/repos/${owner}/${repo}/runs/${runId}/rerun`;
+            const label = mode === 'failed' ? 'failed jobs' : 'all jobs';
+
+            try {
+                showToast(`Re-running ${label} for #${runId}...`, 'info');
+                const res = await fetch(endpoint, { method: 'POST' });
+
+                if (res.status === 401) {
+                    showToast('Session expired. Redirecting to login...', 'error');
+                    setTimeout(() => { window.location.href = '/login'; }, 1500);
+                    return;
+                }
+
+                const data = await safeJson(res);
+                if (res.ok) {
+                    showToast(data.message || `Re-running ${label}!`, 'success');
+                    // Refresh data after a short delay to show updated status
+                    setTimeout(() => {
+                        if (selectedRepo) loadRepoData(selectedRepo.full_name, loadGeneration);
+                    }, 2000);
+                } else {
+                    showToast(`Failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (e) {
+                showToast(`Error: ${e.message}`, 'error');
+            }
+        }
+
         // ── Toast ────────────────────────────────────────────
         function showToast(msg, type = 'info') {
             const container = document.getElementById('toastContainer');
@@ -1511,7 +1798,27 @@
             if (e.target === this) closeModal();
         });
 
+        // ── Theme Toggle ────────────────────────────────────
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme') || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('pipeline-hub-theme', next);
+            updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? '\ud83c\udf19' : '\u2600\ufe0f';
+                icon.style.transform = 'rotate(360deg)';
+                setTimeout(() => { icon.style.transform = ''; }, 300);
+            }
+        }
+
         // ── Boot ─────────────────────────────────────────────
+        updateThemeIcon(document.documentElement.getAttribute('data-theme') || 'dark');
         init();
     </script>
 
