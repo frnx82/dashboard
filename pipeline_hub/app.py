@@ -198,13 +198,24 @@ def _github_get(path, params=None):
     url = f'{GITHUB_API}{path}'
     try:
         r = http.get(url, headers=_headers(), params=params, timeout=15)
+        # Log response details for debugging
+        scopes = r.headers.get('X-OAuth-Scopes', 'N/A')
+        print(f"[GitHub API] GET {path} → {r.status_code} "
+              f"(scopes: {scopes}, size: {len(r.content)} bytes)")
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        # Warn if we got a dict instead of a list for endpoints that should return lists
+        if path.endswith('/repos') and isinstance(data, dict):
+            print(f"[GitHub API] ⚠️  Expected list for {path} but got dict: {str(data)[:300]}")
+        return data
     except requests.exceptions.HTTPError as e:
-        print(f"[GitHub API] HTTP {e.response.status_code} for {path}: {e.response.text[:200]}")
+        body = e.response.text[:500] if e.response is not None else 'no response'
+        print(f"[GitHub API] ❌ HTTP {e.response.status_code} for {path}")
+        print(f"    Response: {body}")
+        print(f"    Scopes: {e.response.headers.get('X-OAuth-Scopes', 'N/A')}")
         raise
     except Exception as e:
-        print(f"[GitHub API] Error for {path}: {e}")
+        print(f"[GitHub API] ❌ Error for {path}: {e}")
         raise
 
 
@@ -296,7 +307,7 @@ def login():
     params = {
         'client_id': GITHUB_CLIENT_ID,
         'redirect_uri': _get_callback_url(),
-        'scope': 'repo workflow',
+        'scope': 'repo workflow read:org',
         'state': state,
     }
     github_auth_url = f'{GITHUB_URL}/login/oauth/authorize?{urlencode(params)}'
@@ -487,6 +498,7 @@ def list_repos():
 
         if GITHUB_REPOS:
             # Mode 1: Specific repos configured via GITHUB_REPOS env var
+            print(f"[list_repos] Mode 1: Fetching {len(GITHUB_REPOS)} specific repos")
             for repo_name in GITHUB_REPOS:
                 try:
                     path = f'/repos/{repo_name}' if '/' in repo_name else f'/repos/{GITHUB_ORG}/{repo_name}'
@@ -499,38 +511,71 @@ def list_repos():
                         'visibility': data.get('visibility', 'private'),
                     })
                 except Exception as e:
-                    print(f"[list_repos] Skipping {repo_name}: {e}")
+                    print(f"[list_repos] ❌ Skipping {repo_name}: {e}")
 
         elif GITHUB_ORG:
             # Mode 2: All repos from an org
-            page = 1
-            while True:
-                data = _github_get(f'/orgs/{GITHUB_ORG}/repos', {
-                    'per_page': 100, 'page': page, 'sort': 'updated', 'type': 'all'
-                })
-                if not data:
-                    break
-                for r in data:
-                    if r.get('archived'):
-                        continue
-                    repos.append({
-                        'name': r['name'],
-                        'full_name': r['full_name'],
-                        'language': r.get('language') or 'Unknown',
-                        'default_branch': r.get('default_branch', 'main'),
-                        'visibility': r.get('visibility', 'private'),
+            print(f"[list_repos] Mode 2: Listing repos from org '{GITHUB_ORG}'")
+            try:
+                page = 1
+                while True:
+                    data = _github_get(f'/orgs/{GITHUB_ORG}/repos', {
+                        'per_page': 100, 'page': page, 'sort': 'updated', 'type': 'all'
                     })
-                if len(data) < 100:
-                    break
-                page += 1
+                    if not data:
+                        break
+                    for r in data:
+                        if r.get('archived'):
+                            continue
+                        repos.append({
+                            'name': r['name'],
+                            'full_name': r['full_name'],
+                            'language': r.get('language') or 'Unknown',
+                            'default_branch': r.get('default_branch', 'main'),
+                            'visibility': r.get('visibility', 'private'),
+                        })
+                    if len(data) < 100:
+                        break
+                    page += 1
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response is not None else 'unknown'
+                print(f"[list_repos] ⚠️  Org listing failed (HTTP {status}). "
+                      f"The OAuth app may not be approved for org '{GITHUB_ORG}'.")
+                print(f"    → Ask an org admin to approve the app at: "
+                      f"{GITHUB_URL}/organizations/{GITHUB_ORG}/settings/oauth_application_policy")
+
+            # Fallback: if org listing returned zero repos, try /user/repos filtered by org
+            if not repos:
+                print(f"[list_repos] ⚠️  Org listing returned 0 repos — trying /user/repos fallback...")
+                try:
+                    all_user_repos = _github_get('/user/repos', {
+                        'per_page': 100, 'sort': 'updated',
+                        'affiliation': 'owner,collaborator,organization_member'
+                    })
+                    for r in (all_user_repos if isinstance(all_user_repos, list) else []):
+                        if r.get('archived'):
+                            continue
+                        # Filter to only repos from the configured org
+                        if r.get('owner', {}).get('login', '').lower() == GITHUB_ORG.lower():
+                            repos.append({
+                                'name': r['name'],
+                                'full_name': r['full_name'],
+                                'language': r.get('language') or 'Unknown',
+                                'default_branch': r.get('default_branch', 'main'),
+                                'visibility': r.get('visibility', 'private'),
+                            })
+                    print(f"[list_repos] Fallback found {len(repos)} repos from org '{GITHUB_ORG}' via /user/repos")
+                except Exception as fallback_err:
+                    print(f"[list_repos] Fallback also failed: {fallback_err}")
 
         else:
             # Mode 3: All repos accessible by the token owner
+            print(f"[list_repos] Mode 3: Listing all repos accessible by token")
             data = _github_get('/user/repos', {
                 'per_page': 100, 'sort': 'updated',
                 'affiliation': 'owner,collaborator,organization_member'
             })
-            for r in data:
+            for r in (data if isinstance(data, list) else []):
                 if r.get('archived'):
                     continue
                 repos.append({
@@ -541,12 +586,127 @@ def list_repos():
                     'visibility': r.get('visibility', 'private'),
                 })
 
+        print(f"[list_repos] ✅ Returning {len(repos)} repos")
         repos.sort(key=lambda r: r['name'])
         return jsonify(repos)
 
     except Exception as e:
-        print(f"[list_repos] Error: {e}")
+        print(f"[list_repos] ❌ Error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/debug/auth')
+@login_required
+def debug_auth():
+    """Diagnostic endpoint to check token permissions and org access.
+    
+    Call this from a browser to see:
+    - Token scopes granted by GitHub
+    - Whether the OAuth app is approved for the org
+    - Which orgs the user belongs to
+    - How many repos are accessible
+    """
+    result = {
+        'auth_mode': AUTH_MODE,
+        'github_url': GITHUB_URL,
+        'github_api': GITHUB_API,
+        'configured_org': GITHUB_ORG or '(not set)',
+        'configured_repos': GITHUB_REPOS or '(not set)',
+        'checks': [],
+    }
+
+    token = get_token()
+    if not token:
+        result['checks'].append({'name': 'Token', 'status': '❌', 'detail': 'No token available'})
+        return jsonify(result)
+
+    # Check 1: Token validity and scopes
+    try:
+        r = http.get(f'{GITHUB_API}/user', headers=_headers(), timeout=10)
+        result['user'] = r.json().get('login', 'unknown')
+        scopes = r.headers.get('X-OAuth-Scopes', 'unknown')
+        result['token_scopes'] = scopes
+        result['checks'].append({
+            'name': 'Token Valid',
+            'status': '✅',
+            'detail': f'Logged in as {result["user"]}. Scopes: {scopes}'
+        })
+
+        # Warn if scopes are missing
+        if 'repo' not in scopes and 'read' not in scopes:
+            result['checks'].append({
+                'name': 'Scope Warning',
+                'status': '⚠️',
+                'detail': f'Token may be missing "repo" scope. Current scopes: {scopes}'
+            })
+    except Exception as e:
+        result['checks'].append({'name': 'Token Valid', 'status': '❌', 'detail': str(e)})
+        return jsonify(result)
+
+    # Check 2: User's org memberships
+    try:
+        orgs = _github_get('/user/orgs')
+        org_names = [o.get('login', '') for o in orgs]
+        result['user_orgs'] = org_names
+        result['checks'].append({
+            'name': 'Org Memberships',
+            'status': '✅' if org_names else '⚠️',
+            'detail': f'Member of: {org_names}' if org_names else 'Not a member of any org via this token'
+        })
+    except Exception as e:
+        result['checks'].append({'name': 'Org Memberships', 'status': '❌', 'detail': str(e)})
+        org_names = []
+
+    # Check 3: Org access (if GITHUB_ORG is set)
+    if GITHUB_ORG:
+        if GITHUB_ORG.lower() in [o.lower() for o in org_names]:
+            result['checks'].append({
+                'name': f'Org "{GITHUB_ORG}" Membership',
+                'status': '✅',
+                'detail': f'User is a member of {GITHUB_ORG}'
+            })
+        else:
+            result['checks'].append({
+                'name': f'Org "{GITHUB_ORG}" Membership',
+                'status': '❌',
+                'detail': f'User is NOT a member of "{GITHUB_ORG}" (or OAuth app not approved for this org). '
+                          f'Ask an org admin to approve at: {GITHUB_URL}/organizations/{GITHUB_ORG}/settings/oauth_application_policy'
+            })
+
+        # Try listing org repos directly
+        try:
+            test_repos = _github_get(f'/orgs/{GITHUB_ORG}/repos', {'per_page': 5})
+            count = len(test_repos) if isinstance(test_repos, list) else 0
+            result['checks'].append({
+                'name': f'Org "{GITHUB_ORG}" Repo Access',
+                'status': '✅' if count > 0 else '❌',
+                'detail': f'Can see {count}+ repos from org' if count > 0
+                          else f'Cannot list repos from org "{GITHUB_ORG}". '
+                               f'The OAuth app likely needs org admin approval.'
+            })
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else 'unknown'
+            result['checks'].append({
+                'name': f'Org "{GITHUB_ORG}" Repo Access',
+                'status': '❌',
+                'detail': f'HTTP {status} — OAuth app not authorized for this org. '
+                          f'Fix: {GITHUB_URL}/organizations/{GITHUB_ORG}/settings/oauth_application_policy'
+            })
+
+    # Check 4: User repos count (fallback)
+    try:
+        user_repos = _github_get('/user/repos', {'per_page': 5, 'affiliation': 'owner,collaborator,organization_member'})
+        count = len(user_repos) if isinstance(user_repos, list) else 0
+        result['checks'].append({
+            'name': 'User Repos (/user/repos)',
+            'status': '✅' if count > 0 else '⚠️',
+            'detail': f'Can see {count}+ repos via /user/repos' if count > 0
+                      else 'No repos accessible via /user/repos'
+        })
+    except Exception as e:
+        result['checks'].append({'name': 'User Repos', 'status': '❌', 'detail': str(e)})
+
+    return jsonify(result)
 
 
 @app.route('/api/repos/<owner>/<repo>/workflows')
