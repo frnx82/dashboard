@@ -1481,7 +1481,8 @@
 
             // Fetch branches in the background (don't block workflow loading)
             const [owner, repo] = fullName.split('/');
-            fetch(`/api/repos/${owner}/${repo}/branches`)
+            const defaultBranch = encodeURIComponent(selectedRepo.default_branch || 'main');
+            fetch(`/api/repos/${owner}/${repo}/branches?default=${defaultBranch}`)
                 .then(r => r.ok ? r.json() : [])
                 .then(branches => {
                     if (loadGeneration === myGeneration) {
@@ -1568,23 +1569,10 @@
         function renderMainContent(repo, workflows, runs) {
             const main = document.getElementById('mainContent');
 
-            // Build branch badges from available branches
-            const branchBadges = repoBranches.length > 0
-                ? repoBranches.slice(0, 8).map(b => {
-                    const isDefault = b === repo.default_branch;
-                    const isEnv = ['dev', 'uat', 'staging', 'prod', 'production'].includes(b.toLowerCase());
-                    const cls = isDefault ? 'default' : (isEnv ? 'env' : '');
-                    return `<span class="branch-badge ${cls}" title="${b}">${b}</span>`;
-                  }).join('')
-                : `<span class="branch-badge default">${repo.default_branch}</span>`;
-
             let html = `
             <div class="repo-header">
                 <h1>${repo.name}</h1>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-                    ${branchBadges}
-                    ${repoBranches.length > 8 ? `<span class="branch-badge" style="opacity:0.5">+${repoBranches.length - 8} more</span>` : ''}
-                </div>
+                <span class="branch-badge default">⎇ ${repo.default_branch}</span>
                 <span class="visibility-badge">🔒 ${repo.visibility}</span>
             </div>
         `;

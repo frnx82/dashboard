@@ -875,22 +875,82 @@ def get_workflow_inputs(owner, repo, workflow_id):
 @app.route('/api/repos/<owner>/<repo>/branches')
 @login_required
 def list_branches(owner, repo):
-    """Fetch branches for a repo (cached)."""
+    """Fetch branches for a repo — returns priority env branches + up to 50 others.
+
+    Repos can have 300+ branches. We don't want to list them all in the UI.
+    Instead, we:
+      1. Always include the repo's default branch (passed via ?default= query param)
+      2. Always include environment branches: dev, uat, staging, prod, production,
+         pprod, preprod, develop, main, master (if they exist)
+      3. Include up to 50 additional branches (alphabetical)
+      4. Cap API calls at 2 pages (200 branches max scanned)
+    """
     try:
         cache_key = f'branches:{owner}/{repo}'
         cached = cache_get(cache_key)
         if cached is not None:
             return jsonify(cached)
 
-        data = _github_get(f'/repos/{owner}/{repo}/branches', {'per_page': 100})
-        branches = [b.get('name', '') for b in (data if isinstance(data, list) else [])]
-        
-        # Sort: default branch first, then common env branches, then alphabetical
-        priority = {'main': 0, 'master': 0, 'develop': 1, 'dev': 1, 'uat': 2, 'staging': 2, 'prod': 3, 'production': 3}
-        branches.sort(key=lambda b: (priority.get(b.lower(), 10), b.lower()))
-        
-        cache_set(cache_key, branches)
-        return jsonify(branches)
+        # Priority branch names — always included if they exist in the repo
+        PRIORITY_NAMES = {
+            'main', 'master', 'develop', 'dev', 'uat', 'staging',
+            'prod', 'production', 'pprod', 'preprod',
+        }
+
+        # Include the repo's default branch (whatever it's called)
+        default_branch = request.args.get('default', '').strip()
+        if default_branch:
+            PRIORITY_NAMES.add(default_branch.lower())
+
+        # Fetch branches — max 2 pages (200 branches scanned)
+        all_branch_names = []
+        for page in range(1, 3):
+            data = _github_get(f'/repos/{owner}/{repo}/branches',
+                               {'per_page': 100, 'page': page})
+            if not data or not isinstance(data, list):
+                break
+            all_branch_names.extend([b.get('name', '') for b in data])
+            if len(data) < 100:
+                break
+
+        # Separate into priority and regular branches
+        # Priority = exact name match OR starts with release_ / release/
+        RELEASE_PREFIXES = ('release_', 'release/')
+        priority_branches = []
+        regular_branches = []
+        for b in all_branch_names:
+            if b.lower() in PRIORITY_NAMES or b.lower().startswith(RELEASE_PREFIXES):
+                priority_branches.append(b)
+            else:
+                regular_branches.append(b)
+
+        # Sort priority branches by importance
+        priority_order = {
+            'main': 0, 'master': 1, 'develop': 2, 'dev': 3,
+            'uat': 4, 'staging': 5, 'pprod': 6, 'preprod': 7,
+            'prod': 8, 'production': 9,
+        }
+        # Put the default branch first regardless of the priority map
+        def priority_sort_key(b):
+            if default_branch and b.lower() == default_branch.lower():
+                return (-1, b.lower())
+            return (priority_order.get(b.lower(), 10), b.lower())
+
+        priority_branches.sort(key=priority_sort_key)
+
+        # Cap regular branches at 50
+        MAX_REGULAR = 50
+        regular_branches = regular_branches[:MAX_REGULAR]
+
+        result = priority_branches + regular_branches
+
+        total_scanned = len(all_branch_names)
+        print(f"[list_branches] {owner}/{repo}: scanned {total_scanned} branches, "
+              f"{len(priority_branches)} priority + {len(regular_branches)} others "
+              f"(max {MAX_REGULAR}) → returning {len(result)}")
+
+        cache_set(cache_key, result)
+        return jsonify(result)
 
     except Exception as e:
         print(f"[list_branches] Error for {owner}/{repo}: {e}")

@@ -36,7 +36,10 @@ REPOS = [
 # Branches per repo — simulates repos with multiple environment branches
 BRANCHES = {
     "my-org/frontend-app": ["main", "dev", "staging", "production", "feature/auth-v2", "feature/dashboard"],
-    "my-org/backend-api": ["main", "dev", "uat", "prod", "hotfix/api-timeout"],
+    "my-org/backend-api": [
+        "main", "dev", "uat", "prod", "pprod", "preprod", "hotfix/api-timeout",
+        "RELEASE_2.5.0", "RELEASE_2.4.1", "RELEASE_2.4.0", "RELEASE_2.3.0",
+    ] + [f"feature/JIRA-{i}" for i in range(1, 120)],  # 125+ branches to test limiting
     "my-org/billing-service": ["main", "develop", "staging", "production"],
     "my-org/infra-terraform": ["main", "dev", "uat", "prod", "feature/eks-upgrade"],
     "my-org/mobile-app": ["develop", "release/2.5", "release/2.6", "main"],
@@ -237,10 +240,42 @@ def list_repos():
 
 @app.route('/api/repos/<owner>/<repo>/branches')
 def list_branches(owner, repo):
-    """Return branches for a repo."""
+    """Return branches for a repo — priority env branches + max 50 others."""
     full_name = f"{owner}/{repo}"
-    branches = BRANCHES.get(full_name, ['main'])
-    return jsonify(branches)
+    all_branches = BRANCHES.get(full_name, ['main'])
+
+    # Priority branch names
+    PRIORITY_NAMES = {
+        'main', 'master', 'develop', 'dev', 'uat', 'staging',
+        'prod', 'production', 'pprod', 'preprod',
+    }
+    default_branch = request.args.get('default', '').strip()
+    if default_branch:
+        PRIORITY_NAMES.add(default_branch.lower())
+
+    RELEASE_PREFIXES = ('release_', 'release/')
+    priority = [b for b in all_branches if b.lower() in PRIORITY_NAMES or b.lower().startswith(RELEASE_PREFIXES)]
+    regular = [b for b in all_branches if b.lower() not in PRIORITY_NAMES and not b.lower().startswith(RELEASE_PREFIXES)]
+
+    # Sort priority: default first, then by importance
+    priority_order = {
+        'main': 0, 'master': 1, 'develop': 2, 'dev': 3,
+        'uat': 4, 'staging': 5, 'pprod': 6, 'preprod': 7,
+        'prod': 8, 'production': 9,
+    }
+    def sort_key(b):
+        if default_branch and b.lower() == default_branch.lower():
+            return (-1, b.lower())
+        return (priority_order.get(b.lower(), 10), b.lower())
+    priority.sort(key=sort_key)
+
+    # Cap regular at 50
+    regular = regular[:50]
+    result = priority + regular
+
+    print(f"[mock-branches] {full_name}: {len(all_branches)} total → "
+          f"{len(priority)} priority + {len(regular)} others = {len(result)} returned")
+    return jsonify(result)
 
 
 @app.route('/api/repos/<owner>/<repo>/workflows')
