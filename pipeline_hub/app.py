@@ -854,6 +854,45 @@ def trigger_workflow(owner, repo, workflow_id):
 @app.route('/api/stats')
 @login_required
 def global_stats():
+    """Lightweight stats that don't make per-workflow API calls.
+    
+    Previously this iterated all repos × all workflows × last run,
+    making 200+ API calls per request and crashing with large orgs.
+    Now it just counts repos and returns placeholder stats until
+    individual repo data is loaded by the frontend.
+    """
+    try:
+        repos_resp = list_repos()
+        repos = repos_resp.get_json()
+        if isinstance(repos, dict) and 'error' in repos:
+            return jsonify(repos), 500
+
+        total_repos = len(repos) if isinstance(repos, list) else 0
+        print(f"[stats] Returning stats for {total_repos} repos (lightweight mode)")
+
+        return jsonify({
+            'total_repos': total_repos,
+            'total_workflows': 0,  # Will be populated by frontend as repos are clicked
+            'passing': 0,
+            'failing': 0,
+            'success_rate': 0,
+            'mode': 'lightweight',
+        })
+
+    except Exception as e:
+        print(f"[stats] ❌ Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/stats/full')
+@login_required
+def global_stats_full():
+    """Full stats with per-workflow status checks.
+    
+    This is expensive (many API calls) — only call from a background
+    task or when explicitly requested by the user.
+    Limits to 10 repos max to avoid timeouts.
+    """
     try:
         repos_resp = list_repos()
         repos = repos_resp.get_json()
@@ -863,8 +902,11 @@ def global_stats():
         total_workflows = 0
         passing = 0
         failing = 0
+        max_repos = min(len(repos) if isinstance(repos, list) else 0, 10)  # Hard limit
 
-        for repo in repos[:20]:  # Limit to avoid GitHub rate-limiting
+        print(f"[stats/full] Scanning {max_repos} repos (of {len(repos) if isinstance(repos, list) else 0} total)...")
+
+        for repo in (repos[:max_repos] if isinstance(repos, list) else []):
             owner, name = repo['full_name'].split('/')
             try:
                 data = _github_get(f'/repos/{owner}/{name}/actions/workflows', {'per_page': 100})
@@ -885,18 +927,22 @@ def global_stats():
                                 failing += 1
                     except Exception:
                         pass
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[stats/full] Error scanning {repo['full_name']}: {e}")
+
+        print(f"[stats/full] Done: {total_workflows} workflows, {passing} passing, {failing} failing")
 
         return jsonify({
-            'total_repos': len(repos),
+            'total_repos': len(repos) if isinstance(repos, list) else 0,
             'total_workflows': total_workflows,
             'passing': passing,
             'failing': failing,
             'success_rate': round(passing / total_workflows * 100, 1) if total_workflows else 0,
+            'repos_scanned': max_repos,
         })
 
     except Exception as e:
+        print(f"[stats/full] ❌ Error: {e}")
         return jsonify({'error': str(e)}), 500
 
 

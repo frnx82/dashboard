@@ -1146,14 +1146,14 @@
                 currentUser = userRes;
                 renderHeaderAuth(userRes);
 
-                // Load repos and stats
-                const [repoRes, statsRes] = await Promise.all([
-                    fetch('/api/repos').then(r => r.json()),
-                    fetch('/api/stats').then(r => r.json())
-                ]);
+                // Load repos FIRST (fast, lightweight)
+                const repoRes = await fetch('/api/repos').then(r => {
+                    if (!r.ok) throw new Error(`Repos API returned HTTP ${r.status}`);
+                    return r.json();
+                });
 
                 // Handle auth errors from API
-                if (repoRes.auth_required || statsRes.auth_required) {
+                if (repoRes.auth_required) {
                     if (authMode === 'oauth') {
                         document.getElementById('loginScreen').classList.add('show');
                     }
@@ -1162,10 +1162,34 @@
 
                 repos = Array.isArray(repoRes) ? repoRes : [];
                 renderRepos(repos);
-                if (statsRes && !statsRes.error) renderHeaderStats(statsRes);
+
+                // Show repo count immediately
+                renderHeaderStats({
+                    total_repos: repos.length, passing: 0, failing: 0,
+                    success_rate: 0, mode: 'lightweight'
+                });
+
+                // Load full stats in background (non-blocking, won't crash UI)
+                loadStatsBackground();
 
             } catch (e) {
                 console.error('Init error:', e);
+                document.getElementById('mainContent').innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">⚠️</div>
+                        <h3>Error loading repositories</h3>
+                        <p>${e.message || 'Check the browser console and pod logs for details'}</p>
+                    </div>`;
+            }
+        }
+
+        async function loadStatsBackground() {
+            // Load stats asynchronously — won't block repo list or crash the page
+            try {
+                const statsRes = await fetch('/api/stats').then(r => r.json());
+                if (statsRes && !statsRes.error) renderHeaderStats(statsRes);
+            } catch (e) {
+                console.warn('Stats load failed (non-blocking):', e);
             }
         }
 
