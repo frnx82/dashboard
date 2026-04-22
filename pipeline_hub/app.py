@@ -26,7 +26,7 @@ For local development without a GitHub token, use mock_app.py instead.
 from flask import Flask, render_template, jsonify, request, redirect, session, url_for
 from functools import wraps
 import os, json, base64, secrets, requests, time, threading
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 app = Flask(__name__)
@@ -903,13 +903,17 @@ def list_branches(owner, repo):
             PRIORITY_NAMES.add(default_branch.lower())
 
         # Fetch branches — max 2 pages (200 branches scanned)
-        all_branch_names = []
+        # Store name + commit SHA so we can date-check non-priority branches
+        all_branches = []  # list of (name, sha)
         for page in range(1, 3):
             data = _github_get(f'/repos/{owner}/{repo}/branches',
                                {'per_page': 100, 'page': page})
             if not data or not isinstance(data, list):
                 break
-            all_branch_names.extend([b.get('name', '') for b in data])
+            for b in data:
+                name = b.get('name', '')
+                sha = (b.get('commit') or {}).get('sha', '')
+                all_branches.append((name, sha))
             if len(data) < 100:
                 break
 
@@ -917,12 +921,12 @@ def list_branches(owner, repo):
         # Priority = exact name match OR starts with release_ / release/
         RELEASE_PREFIXES = ('release_', 'release/')
         priority_branches = []
-        regular_branches = []
-        for b in all_branch_names:
-            if b.lower() in PRIORITY_NAMES or b.lower().startswith(RELEASE_PREFIXES):
-                priority_branches.append(b)
+        regular_with_sha = []  # (name, sha) for date checking
+        for name, sha in all_branches:
+            if name.lower() in PRIORITY_NAMES or name.lower().startswith(RELEASE_PREFIXES):
+                priority_branches.append(name)
             else:
-                regular_branches.append(b)
+                regular_with_sha.append((name, sha))
 
         # Sort priority branches by importance
         priority_order = {
@@ -930,7 +934,6 @@ def list_branches(owner, repo):
             'uat': 4, 'staging': 5, 'pprod': 6, 'preprod': 7,
             'prod': 8, 'production': 9,
         }
-        # Put the default branch first regardless of the priority map
         def priority_sort_key(b):
             if default_branch and b.lower() == default_branch.lower():
                 return (-1, b.lower())
@@ -938,16 +941,59 @@ def list_branches(owner, repo):
 
         priority_branches.sort(key=priority_sort_key)
 
-        # Cap regular branches at 50
+        # ── Date-filter non-priority branches ──
+        # Only include branches with commits in the last 3 weeks.
+        # Check up to 60 branches (API calls are cached for 5 min).
+        MAX_DATE_CHECKS = 60
         MAX_REGULAR = 50
-        regular_branches = regular_branches[:MAX_REGULAR]
+        THREE_WEEKS = timedelta(weeks=3)
+        cutoff = datetime.now(timezone.utc) - THREE_WEEKS
+
+        recent_branches = []
+        stale_count = 0
+        checked = 0
+
+        for name, sha in regular_with_sha:
+            if len(recent_branches) >= MAX_REGULAR:
+                break
+            if checked >= MAX_DATE_CHECKS:
+                break
+            if not sha:
+                continue
+            checked += 1
+            try:
+                commit = _github_get(f'/repos/{owner}/{repo}/git/commits/{sha}')
+                date_str = (commit.get('committer') or {}).get('date', '')
+                if date_str:
+                    commit_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    if commit_date >= cutoff:
+                        recent_branches.append(name)
+                    else:
+                        stale_count += 1
+                else:
+                    recent_branches.append(name)  # Can't determine → include
+            except Exception:
+                recent_branches.append(name)  # On error → include
+
+        regular_branches = recent_branches
 
         result = priority_branches + regular_branches
 
-        total_scanned = len(all_branch_names)
-        print(f"[list_branches] {owner}/{repo}: scanned {total_scanned} branches, "
-              f"{len(priority_branches)} priority + {len(regular_branches)} others "
-              f"(max {MAX_REGULAR}) → returning {len(result)}")
+        # CRITICAL: If the default branch wasn't found in the scanned pages
+        # (300+ branches, alphabetical order → 'main' on page 3+), inject it.
+        if default_branch:
+            found = any(b.lower() == default_branch.lower() for b in result)
+            if not found:
+                result.insert(0, default_branch)
+                print(f"[list_branches] ⚠ Default branch '{default_branch}' was NOT in the "
+                      f"first {len(all_branches)} branches — injected at top")
+
+        total_scanned = len(all_branches)
+        print(f"[list_branches] {owner}/{repo}: scanned {total_scanned}, "
+              f"checked {checked} commit dates ({stale_count} stale, "
+              f"{len(recent_branches)} recent) → "
+              f"{len(priority_branches)} priority + {len(regular_branches)} regular "
+              f"= {len(result)} returned")
 
         cache_set(cache_key, result)
         return jsonify(result)
@@ -1224,6 +1270,271 @@ def global_stats_full():
 
     except Exception as e:
         print(f"[stats/full] ❌ Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Tier 1 Feature Endpoints
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route('/api/repos/<owner>/<repo>/runs/<int:run_id>/jobs')
+@login_required
+def list_run_jobs(owner, repo, run_id):
+    """Fetch jobs (with steps) for a specific workflow run."""
+    try:
+        cache_key = f'jobs:{owner}/{repo}/{run_id}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        data = _github_get(f'/repos/{owner}/{repo}/actions/runs/{run_id}/jobs')
+        jobs = []
+        for j in data.get('jobs', []):
+            duration = "--"
+            if j.get('started_at') and j.get('completed_at'):
+                try:
+                    start = datetime.fromisoformat(j['started_at'].replace('Z', '+00:00'))
+                    end = datetime.fromisoformat(j['completed_at'].replace('Z', '+00:00'))
+                    duration = _format_duration((end - start).total_seconds())
+                except Exception:
+                    pass
+
+            steps = []
+            for s in j.get('steps', []):
+                step_duration = "--"
+                if s.get('started_at') and s.get('completed_at'):
+                    try:
+                        ss = datetime.fromisoformat(s['started_at'].replace('Z', '+00:00'))
+                        se = datetime.fromisoformat(s['completed_at'].replace('Z', '+00:00'))
+                        step_duration = _format_duration((se - ss).total_seconds())
+                    except Exception:
+                        pass
+                steps.append({
+                    'name': s.get('name', ''),
+                    'status': s.get('status', ''),
+                    'conclusion': s.get('conclusion'),
+                    'number': s.get('number', 0),
+                    'duration': step_duration,
+                })
+
+            runner = j.get('runner_name', '')
+            if not runner and j.get('labels'):
+                runner = j['labels'][0]
+
+            jobs.append({
+                'id': j['id'],
+                'name': j.get('name', ''),
+                'status': j.get('status', ''),
+                'conclusion': j.get('conclusion'),
+                'duration': duration,
+                'runner_name': runner or 'unknown',
+                'steps': steps,
+                'html_url': j.get('html_url', ''),
+            })
+
+        cache_set(cache_key, jobs)
+        return jsonify(jobs)
+
+    except Exception as e:
+        print(f"[list_run_jobs] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/repos/<owner>/<repo>/jobs/<int:job_id>/logs')
+@login_required
+def get_job_logs(owner, repo, job_id):
+    """Fetch logs for a specific job. Truncates to last 2000 lines."""
+    try:
+        url = f'{GITHUB_API}/repos/{owner}/{repo}/actions/jobs/{job_id}/logs'
+        r = http.get(url, headers=_headers(), timeout=30, allow_redirects=True)
+        if r.status_code == 200:
+            lines = r.text.split('\n')
+            total = len(lines)
+            truncated = total > 2000
+            if truncated:
+                lines = lines[-2000:]
+            return jsonify({
+                'content': '\n'.join(lines),
+                'truncated': truncated,
+                'total_lines': total,
+            })
+        else:
+            return jsonify({'error': f'GitHub returned {r.status_code}'}), r.status_code
+
+    except Exception as e:
+        print(f"[get_job_logs] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/repos/<owner>/<repo>/workflows/<int:workflow_id>/trends')
+@login_required
+def get_workflow_trends(owner, repo, workflow_id):
+    """Fetch duration trends for the last 20 completed runs of a workflow."""
+    try:
+        cache_key = f'trends:{owner}/{repo}/{workflow_id}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        data = _github_get(
+            f'/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
+            {'per_page': 20, 'status': 'completed'}
+        )
+
+        points = []
+        for run in data.get('workflow_runs', []):
+            duration_sec = 0
+            if run.get('created_at') and run.get('updated_at'):
+                try:
+                    start = datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
+                    end = datetime.fromisoformat(run['updated_at'].replace('Z', '+00:00'))
+                    duration_sec = int((end - start).total_seconds())
+                except Exception:
+                    pass
+            points.append({
+                'run_number': run.get('run_number', 0),
+                'conclusion': run.get('conclusion', ''),
+                'duration_sec': duration_sec,
+                'created_at': run.get('created_at', ''),
+            })
+
+        result = {'workflow_id': workflow_id, 'points': list(reversed(points))}
+        cache_set(cache_key, result)
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"[get_workflow_trends] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/repos/<owner>/<repo>/analytics')
+@login_required
+def get_repo_analytics(owner, repo):
+    """Compute failure analytics for a repo's workflows."""
+    try:
+        cache_key = f'analytics:{owner}/{repo}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        wf_data = _github_get(f'/repos/{owner}/{repo}/actions/workflows')
+        active = [w for w in wf_data.get('workflows', []) if w.get('state') == 'active']
+
+        analytics = []
+        for wf in active[:10]:
+            try:
+                runs_data = _github_get(
+                    f'/repos/{owner}/{repo}/actions/workflows/{wf["id"]}/runs',
+                    {'per_page': 30}
+                )
+                runs = runs_data.get('workflow_runs', [])
+                total = len(runs)
+                successes = sum(1 for r in runs if r.get('conclusion') == 'success')
+                failures = sum(1 for r in runs if r.get('conclusion') == 'failure')
+
+                # Flaky detection: count conclusion alternations
+                conclusions = [r.get('conclusion') for r in runs if r.get('conclusion')]
+                flaky_count = sum(1 for i in range(1, len(conclusions))
+                                  if conclusions[i] != conclusions[i - 1])
+
+                # MTTR: avg time from failure to next success
+                mttr_values = []
+                for i, r in enumerate(runs):
+                    if r.get('conclusion') == 'failure':
+                        for j in range(i - 1, -1, -1):
+                            if runs[j].get('conclusion') == 'success':
+                                try:
+                                    ft = datetime.fromisoformat(r['created_at'].replace('Z', '+00:00'))
+                                    st = datetime.fromisoformat(runs[j]['created_at'].replace('Z', '+00:00'))
+                                    mttr_values.append(abs((st - ft).total_seconds()))
+                                except Exception:
+                                    pass
+                                break
+
+                avg_mttr = int(sum(mttr_values) / len(mttr_values)) if mttr_values else 0
+
+                analytics.append({
+                    'workflow_id': wf['id'],
+                    'name': wf['name'],
+                    'total_runs': total,
+                    'successes': successes,
+                    'failures': failures,
+                    'success_rate': round(successes / total * 100, 1) if total else 0,
+                    'is_flaky': flaky_count >= 3,
+                    'flaky_score': flaky_count,
+                    'mttr_seconds': avg_mttr,
+                    'mttr_display': _format_duration(avg_mttr) if avg_mttr else '--',
+                })
+            except Exception as e:
+                print(f"[analytics] Error for workflow {wf['name']}: {e}")
+
+        analytics.sort(key=lambda a: a['failures'], reverse=True)
+        cache_set(cache_key, analytics)
+        return jsonify(analytics)
+
+    except Exception as e:
+        print(f"[get_repo_analytics] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/activity')
+@login_required
+def get_activity():
+    """Get recent activity across all repos (up to 50 most recent runs)."""
+    try:
+        cache_key = f'activity:{get_token()[:8] if get_token() else "anon"}'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        repos_resp = list_repos()
+        repos = repos_resp.get_json()
+        if isinstance(repos, dict) and 'error' in repos:
+            return jsonify(repos), 500
+
+        repo_list = repos if isinstance(repos, list) else []
+        max_scan = min(len(repo_list), 15)
+        all_runs = []
+
+        for rp in repo_list[:max_scan]:
+            o, n = rp['full_name'].split('/')
+            try:
+                data = _github_get(f'/repos/{o}/{n}/actions/runs', {'per_page': 10})
+                for run in data.get('workflow_runs', []):
+                    duration = "--"
+                    if run.get('status') == 'completed' and run.get('created_at') and run.get('updated_at'):
+                        try:
+                            start = datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
+                            end = datetime.fromisoformat(run['updated_at'].replace('Z', '+00:00'))
+                            duration = _format_duration((end - start).total_seconds())
+                        except Exception:
+                            pass
+                    elif run.get('status') == 'in_progress':
+                        duration = 'running...'
+
+                    all_runs.append({
+                        'id': run['id'],
+                        'repo': rp['full_name'],
+                        'repo_name': rp['name'],
+                        'name': run['name'],
+                        'status': run['status'],
+                        'conclusion': run.get('conclusion'),
+                        'branch': run.get('head_branch', ''),
+                        'triggered_by': (run.get('actor') or {}).get('login', '--'),
+                        'created_at': run.get('created_at', ''),
+                        'duration': duration,
+                        'url': run.get('html_url', ''),
+                    })
+            except Exception as e:
+                print(f"[activity] Error for {rp['full_name']}: {e}")
+
+        all_runs.sort(key=lambda r: r.get('created_at', ''), reverse=True)
+        result = all_runs[:50]
+        cache_set(cache_key, result)
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"[activity] Error: {e}")
         return jsonify({'error': str(e)}), 500
 
 

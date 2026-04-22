@@ -1094,6 +1094,226 @@
             margin-bottom: 4px;
         }
 
+        /* ── Nav Tabs ──────────────────────────────────── */
+        .nav-tabs {
+            display: flex;
+            gap: 2px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 3px;
+            margin-left: 16px;
+        }
+
+        .nav-tab {
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            border: none;
+            background: none;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .nav-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+        .nav-tab.active { color: var(--text-primary); background: var(--bg-card); box-shadow: 0 1px 3px var(--shadow-card); }
+
+        /* ── Job Breakdown ─────────────────────────────── */
+        .run-expandable { cursor: pointer; }
+        .run-expandable:hover { background: var(--bg-hover); }
+        .run-chevron { transition: transform 0.2s ease; display: inline-block; font-size: 10px; color: var(--text-muted); margin-right: 6px; }
+        .run-chevron.open { transform: rotate(90deg); }
+
+        .jobs-panel {
+            background: var(--bg-tertiary);
+            border-top: 1px solid var(--border);
+            padding: 12px 16px;
+            animation: slideDown 0.2s ease;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; max-height: 0; }
+            to { opacity: 1; max-height: 600px; }
+        }
+
+        .job-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 4px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .job-item:hover { border-color: var(--accent-blue); }
+
+        .job-name { font-weight: 500; font-size: 13px; flex: 1; }
+        .job-duration { font-size: 12px; color: var(--text-muted); font-family: 'SF Mono', monospace; }
+        .job-runner { font-size: 11px; color: var(--text-muted); background: var(--bg-tertiary); padding: 2px 8px; border-radius: 4px; }
+
+        .step-list { margin: 4px 0 8px 32px; }
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            border-left: 2px solid var(--border);
+        }
+        .step-item .step-num { font-size: 10px; color: var(--text-muted); min-width: 18px; }
+        .step-item .step-dur { font-family: 'SF Mono', monospace; font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+        .job-log-btn {
+            font-size: 11px; padding: 3px 10px; border-radius: 4px; cursor: pointer;
+            background: var(--bg-tertiary); border: 1px solid var(--border);
+            color: var(--text-secondary); transition: all 0.15s ease;
+        }
+        .job-log-btn:hover { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+
+        /* ── Log Viewer ────────────────────────────────── */
+        .log-panel {
+            position: fixed; top: 0; right: -50vw; width: 50vw; height: 100vh;
+            background: #0d1117; border-left: 1px solid var(--border);
+            z-index: 200; transition: right 0.3s ease;
+            display: flex; flex-direction: column;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.4);
+        }
+        .log-panel.open { right: 0; }
+
+        .log-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 16px; border-bottom: 1px solid #30363d;
+            background: #161b22;
+        }
+        .log-header-title { font-weight: 600; font-size: 14px; color: #e6edf3; }
+        .log-close { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 18px; padding: 4px; }
+        .log-close:hover { color: #e6edf3; }
+
+        .log-content {
+            flex: 1; overflow: auto; padding: 16px;
+            font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 12px; line-height: 1.6; color: #c9d1d9;
+            white-space: pre-wrap; word-break: break-all;
+        }
+
+        .log-truncated {
+            padding: 8px 16px; font-size: 11px; color: #d29922;
+            background: rgba(210,153,34,0.1); border-top: 1px solid #30363d;
+        }
+
+        /* ── Sparkline ─────────────────────────────────── */
+        .sparkline-cell { display: flex; align-items: center; gap: 6px; }
+        .sparkline-svg { width: 80px; height: 24px; }
+        .sparkline-svg polyline { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+        .sparkline-svg circle { r: 2; }
+        .sparkline-val { font-size: 11px; color: var(--text-muted); font-family: 'SF Mono', monospace; }
+
+        /* ── Analytics ──────────────────────────────────── */
+        .analytics-toggle {
+            font-size: 12px; padding: 4px 12px; border-radius: 6px; cursor: pointer;
+            background: var(--bg-tertiary); border: 1px solid var(--border);
+            color: var(--text-secondary); transition: all 0.15s ease; font-family: inherit;
+        }
+        .analytics-toggle:hover { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+        .analytics-toggle.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+
+        .analytics-section { margin-top: 16px; animation: fadeIn 0.3s ease; }
+
+        .analytics-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }
+
+        .analytics-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+            padding: 14px; transition: border-color 0.2s ease;
+        }
+        .analytics-card:hover { border-color: var(--border-light); }
+        .analytics-card .a-name { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+        .analytics-card .a-bar { height: 6px; border-radius: 3px; background: var(--bg-tertiary); overflow: hidden; margin-bottom: 8px; }
+        .analytics-card .a-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+        .analytics-card .a-stats { display: flex; gap: 12px; font-size: 11px; color: var(--text-muted); flex-wrap: wrap; }
+        .analytics-card .a-stats span { display: flex; align-items: center; gap: 3px; }
+        .flaky-badge { background: rgba(210,153,34,0.15); color: var(--warning); padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+
+        /* ── Environment Matrix ─────────────────────────── */
+        .matrix-view { padding: 24px; overflow: auto; }
+        .matrix-view h2 { font-size: 18px; margin-bottom: 16px; }
+
+        .matrix-table {
+            width: 100%; border-collapse: separate; border-spacing: 0;
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+        }
+        .matrix-table th {
+            padding: 10px 16px; text-align: center; font-size: 12px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            background: var(--bg-tertiary); color: var(--text-secondary); border-bottom: 1px solid var(--border);
+        }
+        .matrix-table th:first-child { text-align: left; }
+        .matrix-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); text-align: center; font-size: 13px; }
+        .matrix-table td:first-child { text-align: left; font-weight: 500; }
+        .matrix-table tr:last-child td { border-bottom: none; }
+
+        .matrix-cell {
+            display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+            border-radius: 6px; font-size: 12px; cursor: default;
+        }
+        .matrix-cell.success { background: var(--glow-success); color: var(--success); }
+        .matrix-cell.failure { background: var(--glow-failure); color: var(--failure); }
+        .matrix-cell.stale { background: rgba(210,153,34,0.1); color: var(--warning); }
+        .matrix-cell.none { color: var(--text-muted); }
+
+        /* ── Activity Feed ──────────────────────────────── */
+        .activity-view { padding: 24px; }
+        .activity-view h2 { font-size: 18px; margin-bottom: 16px; }
+
+        .activity-filters { display: flex; gap: 6px; margin-bottom: 16px; }
+        .activity-filter {
+            padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
+            cursor: pointer; border: 1px solid var(--border); background: var(--bg-card);
+            color: var(--text-secondary); transition: all 0.15s ease; font-family: inherit;
+        }
+        .activity-filter:hover { border-color: var(--accent-blue); color: var(--text-primary); }
+        .activity-filter.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+
+        .activity-list { display: flex; flex-direction: column; gap: 6px; }
+
+        .activity-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 8px; font-size: 13px; transition: border-color 0.15s ease;
+        }
+        .activity-item:hover { border-color: var(--border-light); }
+        .activity-item .a-repo { font-weight: 600; min-width: 120px; color: var(--accent-blue); font-size: 12px; }
+        .activity-item .a-wf { flex: 1; }
+        .activity-item .a-branch { font-size: 11px; color: var(--accent-teal); background: rgba(63,185,167,0.1); padding: 2px 8px; border-radius: 4px; }
+        .activity-item .a-user { font-size: 11px; color: var(--text-muted); min-width: 70px; }
+        .activity-item .a-time { font-size: 11px; color: var(--text-muted); font-family: 'SF Mono', monospace; min-width: 65px; text-align: right; }
+
+        /* ── Notification Bell ──────────────────────────── */
+        .notif-bell {
+            position: relative; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 20px; width: 38px; height: 38px; display: flex;
+            align-items: center; justify-content: center; cursor: pointer;
+            transition: all 0.3s ease; font-size: 16px; padding: 0;
+        }
+        .notif-bell:hover { background: var(--bg-hover); border-color: var(--border-light); }
+        .notif-badge {
+            position: absolute; top: -2px; right: -2px; background: var(--failure);
+            color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px;
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            padding: 0 4px;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
         /* ── Loading ────────────────────────────────────── */
         .spinner {
             width: 18px;
@@ -1197,11 +1417,19 @@
                 </path>
             </svg>
             <span class="logo">Pipeline Hub</span>
+            <div class="nav-tabs">
+                <button class="nav-tab active" onclick="switchTab('repos')" id="tabRepos">Repos</button>
+                <button class="nav-tab" onclick="switchTab('matrix')" id="tabMatrix">Matrix</button>
+                <button class="nav-tab" onclick="switchTab('activity')" id="tabActivity">Activity</button>
+            </div>
         </div>
         <input type="text" class="header-search" placeholder="Search repos or workflows..." id="globalSearch"
             oninput="filterRepos(this.value)">
         <div class="header-right">
             <div class="header-stats" id="headerStats"></div>
+            <button class="notif-bell" id="notifBell" onclick="toggleNotifPanel()" title="Watched runs">
+                🔔 <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+            </button>
             <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode">
                 <span class="theme-icon" id="themeIcon">🌙</span>
             </button>
@@ -1279,6 +1507,16 @@
         </div>
     </div>
 
+    <!-- Log Viewer Panel -->
+    <div class="log-panel" id="logPanel">
+        <div class="log-header">
+            <span class="log-header-title" id="logTitle">Job Logs</span>
+            <button class="log-close" onclick="closeLogs()">&times;</button>
+        </div>
+        <div class="log-content" id="logContent">Loading...</div>
+        <div class="log-truncated" id="logTruncated" style="display:none"></div>
+    </div>
+
     <!-- Toast container -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -1286,13 +1524,18 @@
         let repos = [];
         let selectedRepo = null;
         let currentWorkflows = [];
-        let repoBranches = [];  // Available branches for the selected repo
+        let repoBranches = [];
         let pendingTrigger = null;
         let pendingRerun = null;
         let refreshInterval = null;
         let currentUser = null;
         let authMode = 'pat';
-        let loadGeneration = 0;  // Incremented on each repo switch to cancel stale requests
+        let loadGeneration = 0;
+        let currentTab = 'repos';
+        let watchedRuns = [];
+        let watchInterval = null;
+        let analyticsVisible = false;
+        let expandedRuns = {};
 
         const LANG_ICONS = {
             'TypeScript': 'ts', 'Python': 'py', 'Go': 'go', 'HCL': 'hcl',
@@ -1574,6 +1817,7 @@
                 <h1>${repo.name}</h1>
                 <span class="branch-badge default">⎇ ${repo.default_branch}</span>
                 <span class="visibility-badge">🔒 ${repo.visibility}</span>
+                <button class="analytics-toggle" onclick="toggleAnalytics()">📊 Analytics</button>
             </div>
         `;
 
@@ -1635,7 +1879,6 @@
                 const isFailed = status === 'failure';
                 const isCompleted = status === 'success' || status === 'failure' || status === 'cancelled';
 
-                // Build rerun buttons for completed runs
                 let rerunBtns = '';
                 if (isCompleted) {
                     rerunBtns += `<button class="rerun-btn" onclick="event.preventDefault();event.stopPropagation();rerunJobs(${r.id}, 'all')" title="Re-run all jobs">🔄 All</button>`;
@@ -1644,7 +1887,8 @@
                     }
                 }
 
-                return `<a href="${runUrl}" target="_blank" rel="noopener" class="run-item" style="text-decoration:none;color:inherit;cursor:pointer" title="View logs on GitHub">
+                return `<div class="run-item run-expandable" onclick="toggleJobBreakdown(${r.id}, this)" style="cursor:pointer" title="Click to expand jobs">
+                    <span class="run-chevron" id="chevron-${r.id}">&#9654;</span>
                     <span class="run-dot ${status}"></span>
                     <span class="run-name">${r.name}</span>
                     <span class="run-number">#${r.run_number}</span>
@@ -1653,10 +1897,11 @@
                         <span>${r.triggered_by || '--'}</span>
                         <span>${r.duration}</span>
                         <span>${time}</span>
-                        <span style="color:var(--accent-blue);font-size:11px">\u2197 logs</span>
+                        <a href="${runUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--accent-blue);font-size:11px;text-decoration:none">\u2197 logs</a>
                     </div>
                     ${rerunBtns ? `<div class="rerun-actions">${rerunBtns}</div>` : ''}
-                </a>`;
+                </div>
+                <div class="jobs-panel" id="jobs-${r.id}" style="display:none"></div>`;
             }).join('')}
         </div>`;
 
@@ -1771,6 +2016,10 @@
                 const data = await res.json();
                 if (res.ok) {
                     showToast(data.message || `${name} triggered!`, 'success');
+                    // Auto-watch for notifications
+                    if (data.run_id) {
+                        watchRun(data.run_id, fullName, name);
+                    }
                     setTimeout(() => loadRepoData(fullName), 1000);
                 } else {
                     showToast(`Failed: ${data.error || 'Unknown error'}`, 'error');
@@ -1859,6 +2108,350 @@
             toast.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
             container.appendChild(toast);
             setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
+        }
+
+        // ── Tab Navigation ──────────────────────────────────
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+
+            const sidebar = document.querySelector('.sidebar');
+            const main = document.getElementById('mainContent');
+
+            if (tab === 'repos') {
+                sidebar.style.display = '';
+                main.innerHTML = selectedRepo ? '' : `<div class="empty-state"><div class="icon">📦</div><h3>Select a repository</h3><p>Choose a repo from the sidebar to view its workflows</p></div>`;
+                if (selectedRepo) loadRepoData(selectedRepo.full_name, loadGeneration);
+            } else if (tab === 'matrix') {
+                sidebar.style.display = 'none';
+                main.innerHTML = `<div style="text-align:center;padding:60px"><div class="spinner"></div></div>`;
+                loadMatrix();
+            } else if (tab === 'activity') {
+                sidebar.style.display = 'none';
+                main.innerHTML = `<div style="text-align:center;padding:60px"><div class="spinner"></div></div>`;
+                loadActivity();
+            }
+        }
+
+        // ── Job Breakdown ──────────────────────────────────
+        async function toggleJobBreakdown(runId, el) {
+            const panel = document.getElementById(`jobs-${runId}`);
+            const chevron = document.getElementById(`chevron-${runId}`);
+            if (!panel) return;
+
+            if (panel.style.display !== 'none') {
+                panel.style.display = 'none';
+                if (chevron) chevron.classList.remove('open');
+                delete expandedRuns[runId];
+                return;
+            }
+
+            panel.style.display = '';
+            if (chevron) chevron.classList.add('open');
+            expandedRuns[runId] = true;
+            panel.innerHTML = `<div style="padding:12px;text-align:center"><div class="spinner"></div></div>`;
+
+            try {
+                const [owner, repo] = selectedRepo.full_name.split('/');
+                const res = await fetch(`/api/repos/${owner}/${repo}/runs/${runId}/jobs`);
+                const jobs = await safeJson(res);
+                if (!Array.isArray(jobs) || jobs.length === 0) {
+                    panel.innerHTML = `<div style="padding:12px;color:var(--text-muted);font-size:12px">No jobs found</div>`;
+                    return;
+                }
+                panel.innerHTML = jobs.map(j => {
+                    const dot = j.conclusion === 'success' ? 'green' : (j.conclusion === 'failure' ? 'red' : 'blue');
+                    const stepsHtml = (j.steps || []).map(s => {
+                        const sDot = s.conclusion === 'success' ? '✅' : (s.conclusion === 'failure' ? '❌' : '⏳');
+                        return `<div class="step-item"><span class="step-num">${s.number}</span>${sDot} ${s.name}<span class="step-dur">${s.duration}</span></div>`;
+                    }).join('');
+                    return `<div class="job-item" onclick="event.stopPropagation()">
+                        <span class="run-dot ${dot}" style="width:8px;height:8px"></span>
+                        <span class="job-name">${j.name}</span>
+                        <span class="job-duration">${j.duration}</span>
+                        <span class="job-runner">${j.runner_name}</span>
+                        <button class="job-log-btn" onclick="viewLogs(${j.id}, '${j.name.replace(/'/g,"\\'")}')">📄 Logs</button>
+                    </div>
+                    <div class="step-list">${stepsHtml}</div>`;
+                }).join('');
+            } catch (e) {
+                panel.innerHTML = `<div style="padding:12px;color:var(--failure);font-size:12px">Failed to load jobs: ${e.message}</div>`;
+            }
+        }
+
+        // ── Log Viewer ──────────────────────────────────────
+        async function viewLogs(jobId, jobName) {
+            const panel = document.getElementById('logPanel');
+            const content = document.getElementById('logContent');
+            const title = document.getElementById('logTitle');
+            const truncDiv = document.getElementById('logTruncated');
+
+            title.textContent = `Logs: ${jobName}`;
+            content.textContent = 'Loading logs...';
+            truncDiv.style.display = 'none';
+            panel.classList.add('open');
+
+            try {
+                const [owner, repo] = selectedRepo.full_name.split('/');
+                const res = await fetch(`/api/repos/${owner}/${repo}/jobs/${jobId}/logs`);
+                const data = await safeJson(res);
+                if (data.error) {
+                    content.textContent = `Error: ${data.error}`;
+                    return;
+                }
+                // Strip ANSI codes for display
+                const clean = (data.content || '').replace(/\x1b\[[0-9;]*m/g, '');
+                content.textContent = clean;
+                content.scrollTop = content.scrollHeight;
+                if (data.truncated) {
+                    truncDiv.style.display = '';
+                    truncDiv.textContent = `⚠ Showing last 2,000 of ${data.total_lines.toLocaleString()} lines`;
+                }
+            } catch (e) {
+                content.textContent = `Error: ${e.message}`;
+            }
+        }
+
+        function closeLogs() {
+            document.getElementById('logPanel').classList.remove('open');
+        }
+
+        // ── Analytics ───────────────────────────────────────
+        function toggleAnalytics() {
+            analyticsVisible = !analyticsVisible;
+            const btn = document.querySelector('.analytics-toggle');
+            if (btn) btn.classList.toggle('active', analyticsVisible);
+
+            const existing = document.getElementById('analyticsSection');
+            if (!analyticsVisible) {
+                if (existing) existing.remove();
+                return;
+            }
+
+            if (!selectedRepo) return;
+            const placeholder = document.createElement('div');
+            placeholder.id = 'analyticsSection';
+            placeholder.className = 'analytics-section';
+            placeholder.innerHTML = `<div class="section-card"><div style="padding:20px;text-align:center"><div class="spinner"></div></div></div>`;
+
+            const main = document.getElementById('mainContent');
+            const firstCard = main.querySelector('.section-card');
+            if (firstCard) main.insertBefore(placeholder, firstCard);
+            else main.appendChild(placeholder);
+
+            loadAnalytics();
+        }
+
+        async function loadAnalytics() {
+            try {
+                const [owner, repo] = selectedRepo.full_name.split('/');
+                const res = await fetch(`/api/repos/${owner}/${repo}/analytics`);
+                const data = await safeJson(res);
+                if (!Array.isArray(data)) return;
+
+                const section = document.getElementById('analyticsSection');
+                if (!section) return;
+
+                section.innerHTML = `<div class="section-card">
+                    <div class="section-title"><span>📊 Failure Analytics</span><span class="count">last 30 runs</span></div>
+                    <div class="analytics-grid">
+                        ${data.map(a => {
+                            const barColor = a.success_rate >= 90 ? 'var(--success)' : (a.success_rate >= 70 ? 'var(--warning)' : 'var(--failure)');
+                            return `<div class="analytics-card">
+                                <div class="a-name">${a.name} ${a.is_flaky ? '<span class="flaky-badge">FLAKY</span>' : ''}</div>
+                                <div class="a-bar"><div class="a-bar-fill" style="width:${a.success_rate}%;background:${barColor}"></div></div>
+                                <div class="a-stats">
+                                    <span>✅ ${a.successes}/${a.total_runs}</span>
+                                    <span>❌ ${a.failures} failures</span>
+                                    <span>⏱ MTTR: ${a.mttr_display}</span>
+                                    <span>${a.success_rate}% pass</span>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>`;
+            } catch (e) {
+                console.error('Analytics error:', e);
+            }
+        }
+
+        // ── Environment Matrix ──────────────────────────────
+        async function loadMatrix() {
+            const main = document.getElementById('mainContent');
+            try {
+                const envNames = ['dev', 'uat', 'staging', 'preprod', 'prod'];
+                let matrixData = [];
+
+                for (const repo of repos.slice(0, 15)) {
+                    const [owner, name] = repo.full_name.split('/');
+                    try {
+                        const res = await fetch(`/api/repos/${owner}/${name}/workflows`);
+                        const wfs = await safeJson(res);
+                        if (!Array.isArray(wfs)) continue;
+
+                        const envStatus = {};
+                        for (const env of envNames) {
+                            const matching = wfs.find(w => {
+                                const nl = (w.name + ' ' + w.file + ' ' + (w.branch || '')).toLowerCase();
+                                return nl.includes(env);
+                            });
+                            if (matching) {
+                                envStatus[env] = {
+                                    conclusion: matching.last_conclusion || 'none',
+                                    ago: matching.last_run_ago || '--',
+                                };
+                            } else {
+                                envStatus[env] = { conclusion: 'none', ago: '--' };
+                            }
+                        }
+                        matrixData.push({ name: repo.name, full_name: repo.full_name, envStatus });
+                    } catch (e) {
+                        console.warn(`Matrix: skipping ${repo.name}`, e);
+                    }
+                }
+
+                main.innerHTML = `<div class="matrix-view">
+                    <h2>🌍 Environment Matrix</h2>
+                    <p style="color:var(--text-muted);margin-bottom:16px;font-size:13px">Deploy status across environments — detected from workflow names and branches</p>
+                    <table class="matrix-table">
+                        <thead><tr><th>Repository</th>${envNames.map(e => `<th>${e.toUpperCase()}</th>`).join('')}</tr></thead>
+                        <tbody>${matrixData.map(r => `<tr>
+                            <td><a href="#" onclick="switchTab('repos');selectRepo('${r.full_name}');return false" style="color:var(--accent-blue);text-decoration:none">${r.name}</a></td>
+                            ${envNames.map(e => {
+                                const s = r.envStatus[e];
+                                const cls = s.conclusion === 'success' ? 'success' : (s.conclusion === 'failure' ? 'failure' : (s.conclusion === 'none' ? 'none' : 'stale'));
+                                const icon = s.conclusion === 'success' ? '✅' : (s.conclusion === 'failure' ? '❌' : (s.conclusion === 'none' ? '—' : '⚠️'));
+                                return `<td><span class="matrix-cell ${cls}">${icon} ${s.ago !== '--' ? s.ago : ''}</span></td>`;
+                            }).join('')}
+                        </tr>`).join('')}</tbody>
+                    </table>
+                </div>`;
+            } catch (e) {
+                main.innerHTML = `<div class="empty-state"><div class="icon">❌</div><h3>Error loading matrix</h3><p>${e.message}</p></div>`;
+            }
+        }
+
+        // ── Activity Feed ───────────────────────────────────
+        let activityFilter = 'all';
+
+        async function loadActivity() {
+            const main = document.getElementById('mainContent');
+            try {
+                const res = await fetch('/api/activity');
+                const runs = await safeJson(res);
+                if (!Array.isArray(runs)) {
+                    main.innerHTML = `<div class="empty-state"><h3>No activity data</h3></div>`;
+                    return;
+                }
+                renderActivity(runs);
+            } catch (e) {
+                main.innerHTML = `<div class="empty-state"><div class="icon">❌</div><h3>Error loading activity</h3><p>${e.message}</p></div>`;
+            }
+        }
+
+        function renderActivity(runs) {
+            const main = document.getElementById('mainContent');
+            const filtered = activityFilter === 'all' ? runs
+                : activityFilter === 'running' ? runs.filter(r => r.status === 'in_progress')
+                : runs.filter(r => r.conclusion === 'failure');
+
+            main.innerHTML = `<div class="activity-view">
+                <h2>⚡ Live Activity Feed</h2>
+                <div class="activity-filters">
+                    <button class="activity-filter ${activityFilter === 'all' ? 'active' : ''}" onclick="activityFilter='all';renderActivity(window._activityRuns)">All (${runs.length})</button>
+                    <button class="activity-filter ${activityFilter === 'running' ? 'active' : ''}" onclick="activityFilter='running';renderActivity(window._activityRuns)">🔵 Running (${runs.filter(r=>r.status==='in_progress').length})</button>
+                    <button class="activity-filter ${activityFilter === 'failed' ? 'active' : ''}" onclick="activityFilter='failed';renderActivity(window._activityRuns)">🔴 Failed (${runs.filter(r=>r.conclusion==='failure').length})</button>
+                </div>
+                <div class="activity-list">
+                    ${filtered.length === 0 ? '<div style="padding:20px;text-align:center;color:var(--text-muted)">No matching runs</div>' :
+                    filtered.map(r => {
+                        const status = r.conclusion || r.status || 'queued';
+                        const dot = status === 'success' ? 'green' : (status === 'failure' ? 'red' : (status === 'in_progress' ? 'blue' : 'gray'));
+                        return `<div class="activity-item">
+                            <span class="run-dot ${dot}" style="width:8px;height:8px;flex-shrink:0"></span>
+                            <span class="a-repo">${r.repo_name}</span>
+                            <span class="a-wf">${r.name}</span>
+                            <span class="a-branch">${r.branch}</span>
+                            <span class="a-user">${r.triggered_by}</span>
+                            <span class="a-time">${r.duration}</span>
+                            <span class="a-time">${formatTime(r.created_at)}</span>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>`;
+            window._activityRuns = runs;
+        }
+
+        // ── Browser Notifications ───────────────────────────
+        function watchRun(runId, repoFullName, workflowName) {
+            if (watchedRuns.find(w => w.id === runId)) return;
+            watchedRuns.push({ id: runId, repo: repoFullName, name: workflowName, notified: false });
+            updateNotifBadge();
+
+            // Request notification permission
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+
+            // Start polling if not already
+            if (!watchInterval) {
+                watchInterval = setInterval(checkWatchedRuns, 10000);
+            }
+        }
+
+        async function checkWatchedRuns() {
+            const pending = watchedRuns.filter(w => !w.notified);
+            if (pending.length === 0) {
+                clearInterval(watchInterval);
+                watchInterval = null;
+                return;
+            }
+
+            for (const w of pending) {
+                try {
+                    const [owner, repo] = w.repo.split('/');
+                    const res = await fetch(`/api/repos/${owner}/${repo}/runs`);
+                    const runs = await safeJson(res);
+                    if (!Array.isArray(runs)) continue;
+                    const run = runs.find(r => r.id === w.id);
+                    if (run && run.status === 'completed') {
+                        w.notified = true;
+                        const emoji = run.conclusion === 'success' ? '✅' : '❌';
+                        showToast(`${emoji} ${w.name} completed: ${run.conclusion}`, run.conclusion === 'success' ? 'success' : 'error');
+
+                        if ('Notification' in window && Notification.permission === 'granted') {
+                            new Notification(`Pipeline Hub: ${w.name}`, {
+                                body: `${emoji} ${run.conclusion} on ${w.repo}`,
+                                icon: '/favicon.ico',
+                            });
+                        }
+                        updateNotifBadge();
+                    }
+                } catch (e) {
+                    console.warn('Watch check error:', e);
+                }
+            }
+        }
+
+        function updateNotifBadge() {
+            const badge = document.getElementById('notifBadge');
+            const pending = watchedRuns.filter(w => !w.notified).length;
+            if (pending > 0) {
+                badge.textContent = pending;
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function toggleNotifPanel() {
+            const pending = watchedRuns.filter(w => !w.notified);
+            if (pending.length === 0) {
+                showToast('No watched runs. Trigger a workflow to start watching.', 'info');
+            } else {
+                showToast(`Watching ${pending.length} run(s): ${pending.map(w => w.name).join(', ')}`, 'info');
+            }
         }
 
         // ── Click outside modal ──────────────────────────────

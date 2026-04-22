@@ -269,12 +269,25 @@ def list_branches(owner, repo):
         return (priority_order.get(b.lower(), 10), b.lower())
     priority.sort(key=sort_key)
 
-    # Cap regular at 50
-    regular = regular[:50]
+    # Cap regular at 50, simulating 3-week recency filter
+    # In mock mode, treat JIRA branches > 70 as "stale" (older than 3 weeks)
+    recent_regular = []
+    stale = 0
+    for b in regular:
+        if len(recent_regular) >= 50:
+            break
+        # Simulate: high JIRA numbers are recent, low are stale
+        import re
+        m = re.search(r'(\d+)$', b)
+        if m and int(m.group(1)) < 70:
+            stale += 1
+            continue
+        recent_regular.append(b)
+    regular = recent_regular
     result = priority + regular
 
     print(f"[mock-branches] {full_name}: {len(all_branches)} total → "
-          f"{len(priority)} priority + {len(regular)} others = {len(result)} returned")
+          f"{len(priority)} priority + {len(regular)} recent ({stale} stale) = {len(result)} returned")
     return jsonify(result)
 
 
@@ -447,6 +460,259 @@ def global_stats():
         'success_rate': round(passing / total * 100, 1) if total else 0,
         'repos_scanned': len(REPOS),
     })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Tier 1 Feature Endpoints (Mock)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _mock_steps(wf_type):
+    """Generate realistic mock steps based on workflow type."""
+    step_templates = {
+        'ci': [
+            ('Set up job', 'success', '3s'), ('Checkout', 'success', '5s'),
+            ('Setup runtime', 'success', '12s'), ('Install dependencies', 'success', '28s'),
+            ('Lint', 'success', '8s'), ('Build', 'success', '24s'),
+            ('Run unit tests', 'success', '45s'), ('Upload coverage', 'success', '3s'),
+        ],
+        'deploy': [
+            ('Set up job', 'success', '2s'), ('Checkout', 'success', '4s'),
+            ('Configure credentials', 'success', '6s'), ('Build image', 'success', '58s'),
+            ('Push to registry', 'success', '15s'), ('Deploy to cluster', 'success', '32s'),
+            ('Health check', 'success', '20s'), ('Notify Slack', 'success', '2s'),
+        ],
+        'test': [
+            ('Set up job', 'success', '3s'), ('Checkout', 'success', '5s'),
+            ('Setup runtime', 'success', '10s'), ('Install dependencies', 'success', '25s'),
+            ('Run tests', 'success', '2m 15s'), ('Generate report', 'success', '5s'),
+        ],
+        'scan': [
+            ('Set up job', 'success', '2s'), ('Checkout', 'success', '4s'),
+            ('Run scanner', 'success', '1m 30s'), ('Upload results', 'success', '3s'),
+        ],
+    }
+    steps = step_templates.get(wf_type, step_templates['ci'])
+    return [{'name': s[0], 'status': 'completed', 'conclusion': s[1],
+             'number': i + 1, 'duration': s[2]} for i, s in enumerate(steps)]
+
+
+def _detect_wf_type(name):
+    """Detect workflow type from name."""
+    nl = name.lower()
+    if 'deploy' in nl or 'release' in nl or 'publish' in nl:
+        return 'deploy'
+    elif 'test' in nl or 'e2e' in nl or 'integration' in nl or 'quality' in nl:
+        return 'test'
+    elif 'scan' in nl or 'audit' in nl or 'compliance' in nl or 'security' in nl or 'drift' in nl or 'cost' in nl:
+        return 'scan'
+    return 'ci'
+
+
+@app.route('/api/repos/<owner>/<repo>/runs/<int:run_id>/jobs')
+def list_run_jobs(owner, repo, run_id):
+    """Return mock jobs for a run."""
+    full_name = f"{owner}/{repo}"
+    workflows = WORKFLOWS.get(full_name, [])
+
+    # Find the workflow for this run
+    wf = None
+    for w in workflows:
+        if 300 + w['id'] == run_id:
+            wf = w
+            break
+    # Also check triggered runs
+    for tr in TRIGGERED_RUNS:
+        if tr.get('id') == run_id:
+            wf_name = tr.get('name', 'Unknown')
+            wf_type = _detect_wf_type(wf_name)
+            conclusion = tr.get('conclusion', 'success')
+            steps = _mock_steps(wf_type)
+            if conclusion == 'failure' and steps:
+                steps[-2]['conclusion'] = 'failure'
+            return jsonify([{
+                'id': run_id * 10 + 1, 'name': wf_name.split()[0],
+                'status': tr.get('status', 'completed'),
+                'conclusion': conclusion,
+                'duration': tr.get('duration', '3m 00s'),
+                'runner_name': 'ubuntu-latest', 'steps': steps,
+                'html_url': tr.get('url', ''),
+            }])
+
+    if not wf:
+        return jsonify([])
+
+    wf_type = _detect_wf_type(wf['name'])
+    conclusion = wf['last_conclusion']
+
+    # Generate 1-3 jobs depending on workflow type
+    jobs = []
+    if wf_type == 'ci':
+        build_steps = _mock_steps('ci')[:6]
+        test_steps = _mock_steps('test')[2:]
+        if conclusion == 'failure':
+            test_steps[-2]['conclusion'] = 'failure'
+        jobs = [
+            {'id': run_id * 10 + 1, 'name': 'build', 'status': 'completed',
+             'conclusion': 'success', 'duration': '1m 12s',
+             'runner_name': 'ubuntu-latest', 'steps': build_steps, 'html_url': ''},
+            {'id': run_id * 10 + 2, 'name': 'test', 'status': 'completed',
+             'conclusion': conclusion, 'duration': '2m 30s',
+             'runner_name': 'ubuntu-latest', 'steps': test_steps, 'html_url': ''},
+        ]
+    elif wf_type == 'deploy':
+        steps = _mock_steps('deploy')
+        if conclusion == 'failure':
+            steps[-2]['conclusion'] = 'failure'
+        jobs = [
+            {'id': run_id * 10 + 1, 'name': 'build', 'status': 'completed',
+             'conclusion': 'success', 'duration': '1m 30s',
+             'runner_name': 'ubuntu-latest', 'steps': _mock_steps('ci')[:5], 'html_url': ''},
+            {'id': run_id * 10 + 2, 'name': 'deploy', 'status': 'completed',
+             'conclusion': conclusion, 'duration': '2m 45s',
+             'runner_name': 'ubuntu-latest', 'steps': steps, 'html_url': ''},
+        ]
+    else:
+        steps = _mock_steps(wf_type)
+        if conclusion == 'failure':
+            steps[-2]['conclusion'] = 'failure'
+        jobs = [
+            {'id': run_id * 10 + 1, 'name': wf_type, 'status': 'completed',
+             'conclusion': conclusion, 'duration': wf.get('duration', '3m 00s'),
+             'runner_name': 'ubuntu-latest', 'steps': steps, 'html_url': ''},
+        ]
+
+    return jsonify(jobs)
+
+
+@app.route('/api/repos/<owner>/<repo>/jobs/<int:job_id>/logs')
+def get_job_logs(owner, repo, job_id):
+    """Return mock log content for a job."""
+    log_lines = [
+        "\033[36m2026-04-22T10:30:01.123Z\033[0m ##[group]Run actions/checkout@v4",
+        "\033[36m2026-04-22T10:30:01.456Z\033[0m with:",
+        "\033[36m2026-04-22T10:30:01.789Z\033[0m   repository: my-org/backend-api",
+        "\033[36m2026-04-22T10:30:02.100Z\033[0m   ref: main",
+        "\033[36m2026-04-22T10:30:02.500Z\033[0m ##[endgroup]",
+        "",
+        "\033[36m2026-04-22T10:30:05.000Z\033[0m ##[group]Setup Node.js 18.x",
+        "\033[36m2026-04-22T10:30:06.000Z\033[0m \033[32mDownloading node 18.19.1...\033[0m",
+        "\033[36m2026-04-22T10:30:08.000Z\033[0m \033[32mNode.js 18.19.1 installed\033[0m",
+        "\033[36m2026-04-22T10:30:08.500Z\033[0m ##[endgroup]",
+        "",
+        "\033[36m2026-04-22T10:30:10.000Z\033[0m \033[1m> npm ci\033[0m",
+        "\033[36m2026-04-22T10:30:12.000Z\033[0m added 1247 packages in 2.1s",
+        "",
+        "\033[36m2026-04-22T10:30:15.000Z\033[0m \033[1m> npm run build\033[0m",
+        "\033[36m2026-04-22T10:30:16.000Z\033[0m Creating optimized production build...",
+        "\033[36m2026-04-22T10:30:25.000Z\033[0m \033[32m✓ Build completed successfully\033[0m",
+        "\033[36m2026-04-22T10:30:25.500Z\033[0m Build output: 2.4 MB (gzipped: 612 KB)",
+        "",
+        "\033[36m2026-04-22T10:30:28.000Z\033[0m \033[1m> npm test -- --coverage\033[0m",
+        "\033[36m2026-04-22T10:30:30.000Z\033[0m PASS src/utils/__tests__/helpers.test.ts (1.2s)",
+        "\033[36m2026-04-22T10:30:31.000Z\033[0m PASS src/api/__tests__/client.test.ts (0.8s)",
+        "\033[36m2026-04-22T10:30:32.000Z\033[0m PASS src/components/__tests__/Dashboard.test.tsx (2.1s)",
+        "\033[36m2026-04-22T10:30:33.000Z\033[0m PASS src/hooks/__tests__/useAuth.test.ts (0.5s)",
+        "\033[36m2026-04-22T10:30:34.000Z\033[0m PASS src/services/__tests__/workflow.test.ts (1.8s)",
+        "",
+        "\033[36m2026-04-22T10:30:35.000Z\033[0m \033[32mTest Suites: 5 passed, 5 total\033[0m",
+        "\033[36m2026-04-22T10:30:35.100Z\033[0m \033[32mTests:       42 passed, 42 total\033[0m",
+        "\033[36m2026-04-22T10:30:35.200Z\033[0m \033[32mSnapshots:   0 total\033[0m",
+        "\033[36m2026-04-22T10:30:35.300Z\033[0m \033[32mTime:        4.4s\033[0m",
+        "\033[36m2026-04-22T10:30:35.400Z\033[0m Coverage: 87.3% | Branches: 82.1%",
+        "",
+        "\033[36m2026-04-22T10:30:36.000Z\033[0m \033[32m✅ All checks passed!\033[0m",
+    ]
+    return jsonify({
+        'content': '\n'.join(log_lines),
+        'truncated': False,
+        'total_lines': len(log_lines),
+    })
+
+
+@app.route('/api/repos/<owner>/<repo>/workflows/<int:workflow_id>/trends')
+def get_workflow_trends(owner, repo, workflow_id):
+    """Return mock trend data for a workflow."""
+    random.seed(workflow_id)  # Deterministic per workflow
+    base_duration = random.randint(60, 480)
+    points = []
+    for i in range(20):
+        variation = random.randint(-30, 40)
+        conclusion = random.choice(['success'] * 8 + ['failure'] * 2)
+        points.append({
+            'run_number': 280 + i,
+            'conclusion': conclusion,
+            'duration_sec': max(30, base_duration + variation),
+            'created_at': (datetime.now() - timedelta(days=20 - i)).isoformat(),
+        })
+    random.seed()  # Reset seed
+    return jsonify({'workflow_id': workflow_id, 'points': points})
+
+
+@app.route('/api/repos/<owner>/<repo>/analytics')
+def get_repo_analytics(owner, repo):
+    """Return mock analytics for a repo."""
+    full_name = f"{owner}/{repo}"
+    workflows = WORKFLOWS.get(full_name, [])
+    analytics = []
+    for wf in workflows:
+        random.seed(wf['id'])
+        total = 30
+        failures = random.randint(0, 8)
+        successes = total - failures
+        flaky_score = random.randint(0, 6)
+        mttr_sec = random.randint(300, 7200) if failures > 0 else 0
+        mttr_min = mttr_sec // 60
+        analytics.append({
+            'workflow_id': wf['id'],
+            'name': wf['name'],
+            'total_runs': total,
+            'successes': successes,
+            'failures': failures,
+            'success_rate': round(successes / total * 100, 1),
+            'is_flaky': flaky_score >= 3,
+            'flaky_score': flaky_score,
+            'mttr_seconds': mttr_sec,
+            'mttr_display': f'{mttr_min}m' if mttr_sec else '--',
+        })
+    random.seed()
+    analytics.sort(key=lambda a: a['failures'], reverse=True)
+    return jsonify(analytics)
+
+
+@app.route('/api/activity')
+def get_activity():
+    """Return mock activity feed across all repos."""
+    now = datetime.now()
+    all_runs = []
+    statuses = ['completed'] * 8 + ['in_progress'] * 2
+    conclusions = ['success'] * 6 + ['failure'] * 3 + [None]
+    users = ['rajesh.e', 'john.doe', 'jane.smith', 'ci-bot', 'sarah.k', 'mike.lee']
+
+    for repo_data in REPOS:
+        full_name = repo_data['full_name']
+        workflows = WORKFLOWS.get(full_name, [])
+        for wf in workflows[:3]:  # Max 3 per repo
+            status = random.choice(statuses)
+            conclusion = random.choice(conclusions) if status == 'completed' else None
+            mins_ago = random.randint(1, 1440)
+            created = (now - timedelta(minutes=mins_ago)).isoformat()
+            duration = f'{random.randint(1,12)}m {random.randint(10,59)}s' if status == 'completed' else 'running...'
+            all_runs.append({
+                'id': 500 + wf['id'],
+                'repo': full_name,
+                'repo_name': repo_data['name'],
+                'name': wf['name'],
+                'status': status,
+                'conclusion': conclusion,
+                'branch': wf.get('branch', 'main'),
+                'triggered_by': random.choice(users),
+                'created_at': created,
+                'duration': duration,
+                'url': f'https://github.com/{full_name}/actions/runs/{500 + wf["id"]}',
+            })
+
+    all_runs.sort(key=lambda r: r['created_at'], reverse=True)
+    return jsonify(all_runs[:50])
 
 
 if __name__ == '__main__':
