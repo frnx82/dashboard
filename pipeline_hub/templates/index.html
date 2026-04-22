@@ -997,6 +997,36 @@
             box-shadow: 0 4px 12px rgba(46, 160, 67, 0.3);
         }
 
+        .modal-confirm.confirm-danger {
+            background: linear-gradient(135deg, #da3633, #f85149);
+        }
+
+        .modal-confirm.confirm-danger:hover {
+            box-shadow: 0 4px 12px rgba(248, 81, 73, 0.4);
+        }
+
+        .confirm-details {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin: 16px 0;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .confirm-details .detail-label {
+            color: var(--text-muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .confirm-details .detail-value {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
         /* ── Toast ──────────────────────────────────────── */
         .toast-container {
             position: fixed;
@@ -1236,6 +1266,19 @@
         </div>
     </div>
 
+    <!-- Rerun Confirmation Modal -->
+    <div class="modal-overlay" id="rerunModal">
+        <div class="modal-box" style="width:400px">
+            <div class="modal-title" id="rerunModalTitle">Confirm Re-run</div>
+            <div class="modal-subtitle" id="rerunModalSubtitle"></div>
+            <div class="confirm-details" id="rerunModalDetails"></div>
+            <div class="modal-actions">
+                <button class="modal-cancel" onclick="closeRerunModal()">Cancel</button>
+                <button class="modal-confirm confirm-danger" id="rerunModalConfirm">🔄 Re-run</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast container -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -1245,6 +1288,7 @@
         let currentWorkflows = [];
         let repoBranches = [];  // Available branches for the selected repo
         let pendingTrigger = null;
+        let pendingRerun = null;
         let refreshInterval = null;
         let currentUser = null;
         let authMode = 'pat';
@@ -1749,8 +1793,45 @@
         }
 
         // ── Rerun Jobs ──────────────────────────────────────
-        async function rerunJobs(runId, mode) {
+        function rerunJobs(runId, mode) {
             if (!selectedRepo) return;
+            const label = mode === 'failed' ? 'Re-run Failed Jobs' : 'Re-run All Jobs';
+            const desc = mode === 'failed'
+                ? 'Only the failed jobs will be re-executed. Successful jobs will keep their results.'
+                : 'All jobs in this workflow run will be re-executed from scratch.';
+
+            pendingRerun = { runId, mode };
+
+            document.getElementById('rerunModalTitle').textContent = label;
+            document.getElementById('rerunModalSubtitle').textContent = desc;
+            document.getElementById('rerunModalDetails').innerHTML = `
+                <div><span class="detail-label">Run</span> <span class="detail-value">#${runId}</span></div>
+                <div><span class="detail-label">Repository</span> <span class="detail-value">${selectedRepo.full_name}</span></div>
+                <div><span class="detail-label">Mode</span> <span class="detail-value">${mode === 'failed' ? '🔁 Failed jobs only' : '🔄 All jobs'}</span></div>
+            `;
+
+            const confirmBtn = document.getElementById('rerunModalConfirm');
+            confirmBtn.textContent = mode === 'failed' ? '🔁 Re-run Failed' : '🔄 Re-run All';
+            confirmBtn.onclick = confirmRerun;
+
+            document.getElementById('rerunModal').classList.add('show');
+        }
+
+        function closeRerunModal() {
+            document.getElementById('rerunModal').classList.remove('show');
+            pendingRerun = null;
+        }
+
+        // Close rerun modal on outside click
+        document.getElementById('rerunModal').addEventListener('click', function(e) {
+            if (e.target === this) closeRerunModal();
+        });
+
+        async function confirmRerun() {
+            if (!pendingRerun || !selectedRepo) return;
+            const { runId, mode } = pendingRerun;
+            closeRerunModal();
+
             const [owner, repo] = selectedRepo.full_name.split('/');
             const endpoint = mode === 'failed'
                 ? `/api/repos/${owner}/${repo}/runs/${runId}/rerun-failed`
@@ -1770,7 +1851,6 @@
                 const data = await safeJson(res);
                 if (res.ok) {
                     showToast(data.message || `Re-running ${label}!`, 'success');
-                    // Refresh data after a short delay to show updated status
                     setTimeout(() => {
                         if (selectedRepo) loadRepoData(selectedRepo.full_name, loadGeneration);
                     }, 2000);

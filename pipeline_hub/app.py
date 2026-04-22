@@ -542,12 +542,13 @@ def list_repos():
                     path = f'/repos/{repo_name}' if '/' in repo_name else f'/repos/{GITHUB_ORG}/{repo_name}'
                     data = _github_get(path)
                     if data.get('archived'):
+                        print(f"[list_repos] Skipping archived repo: {repo_name}")
                         continue
                     repos.append({
                         'name': data['name'],
                         'full_name': data['full_name'],
                         'language': data.get('language') or 'Unknown',
-                        'default_branch': data.get('default_branch', 'main'),
+                        'default_branch': data.get('default_branch') or 'main',
                         'visibility': data.get('visibility', 'private'),
                     })
                 except Exception as e:
@@ -566,12 +567,13 @@ def list_repos():
                         break
                     for r in data:
                         if r.get('archived'):
+                            print(f"[list_repos] Skipping archived repo: {r.get('name', '?')}")
                             continue
                         repos.append({
                             'name': r['name'],
                             'full_name': r['full_name'],
                             'language': r.get('language') or 'Unknown',
-                            'default_branch': r.get('default_branch', 'main'),
+                            'default_branch': r.get('default_branch') or 'main',
                             'visibility': r.get('visibility', 'private'),
                         })
                     if len(data) < 100:
@@ -594,13 +596,14 @@ def list_repos():
                     })
                     for r in (all_user_repos if isinstance(all_user_repos, list) else []):
                         if r.get('archived'):
+                            print(f"[list_repos] Skipping archived repo: {r.get('name', '?')}")
                             continue
                         if r.get('owner', {}).get('login', '').lower() == GITHUB_ORG.lower():
                             repos.append({
                                 'name': r['name'],
                                 'full_name': r['full_name'],
                                 'language': r.get('language') or 'Unknown',
-                                'default_branch': r.get('default_branch', 'main'),
+                                'default_branch': r.get('default_branch') or 'main',
                                 'visibility': r.get('visibility', 'private'),
                             })
                     print(f"[list_repos] Fallback found {len(repos)} repos from org '{GITHUB_ORG}' via /user/repos")
@@ -616,12 +619,13 @@ def list_repos():
             })
             for r in (data if isinstance(data, list) else []):
                 if r.get('archived'):
+                    print(f"[list_repos] Skipping archived repo: {r.get('name', '?')}")
                     continue
                 repos.append({
                     'name': r['name'],
                     'full_name': r['full_name'],
                     'language': r.get('language') or 'Unknown',
-                    'default_branch': r.get('default_branch', 'main'),
+                    'default_branch': r.get('default_branch') or 'main',
                     'visibility': r.get('visibility', 'private'),
                 })
 
