@@ -1312,6 +1312,56 @@
             padding: 0 4px;
         }
 
+        /* ── Help Modal ─────────────────────────────────── */
+        .help-btn {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 20px; width: 38px; height: 38px; display: flex;
+            align-items: center; justify-content: center; cursor: pointer;
+            transition: all 0.3s ease; font-size: 16px; padding: 0;
+        }
+        .help-btn:hover { background: var(--bg-hover); border-color: var(--border-light); }
+
+        .help-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 300;
+            display: none; align-items: center; justify-content: center;
+            backdrop-filter: blur(4px);
+        }
+        .help-overlay.show { display: flex; }
+
+        .help-box {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: 12px; width: 560px; max-height: 80vh; overflow-y: auto;
+            padding: 28px 32px; position: relative;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.3); animation: fadeIn 0.2s ease;
+        }
+
+        .help-box h2 { font-size: 20px; margin-bottom: 6px; }
+        .help-box .help-subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+
+        .help-box .help-section { margin-bottom: 18px; }
+        .help-box .help-section h3 {
+            font-size: 13px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.5px; color: var(--accent-blue); margin-bottom: 8px;
+        }
+
+        .help-box .help-feature {
+            display: flex; gap: 10px; align-items: flex-start;
+            padding: 6px 0; font-size: 13px; color: var(--text-secondary); line-height: 1.5;
+        }
+        .help-box .help-feature .hf-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+        .help-box .help-feature strong { color: var(--text-primary); }
+
+        .help-close {
+            position: absolute; top: 16px; right: 16px; background: none;
+            border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 4px;
+        }
+        .help-close:hover { color: var(--text-primary); }
+
+        .help-footer {
+            margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border);
+            font-size: 11px; color: var(--text-muted); text-align: center;
+        }
+
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         /* ── Loading ────────────────────────────────────── */
@@ -1427,6 +1477,7 @@
             oninput="filterRepos(this.value)">
         <div class="header-right">
             <div class="header-stats" id="headerStats"></div>
+            <button class="help-btn" onclick="toggleHelp()" title="About Pipeline Hub">ℹ️</button>
             <button class="notif-bell" id="notifBell" onclick="toggleNotifPanel()" title="Watched runs">
                 🔔 <span class="notif-badge" id="notifBadge" style="display:none">0</span>
             </button>
@@ -1504,6 +1555,46 @@
                 <button class="modal-cancel" onclick="closeRerunModal()">Cancel</button>
                 <button class="modal-confirm confirm-danger" id="rerunModalConfirm">🔄 Re-run</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="help-overlay" id="helpModal">
+        <div class="help-box">
+            <button class="help-close" onclick="toggleHelp()">&times;</button>
+            <h2>🚀 Pipeline Hub</h2>
+            <div class="help-subtitle">A unified CI/CD command center for GitHub Actions workflows</div>
+
+            <div class="help-section">
+                <h3>📦 Repository Management</h3>
+                <div class="help-feature"><span class="hf-icon">📋</span><span><strong>Multi-repo dashboard</strong> — View all org repositories with language badges, visibility status, and default branch info.</span></div>
+                <div class="help-feature"><span class="hf-icon">🔍</span><span><strong>Search &amp; filter</strong> — Instantly search repos and workflows by name or language.</span></div>
+                <div class="help-feature"><span class="hf-icon">🌿</span><span><strong>Smart branch selection</strong> — Priority branches (main, dev, uat, prod, RELEASE_*) always listed. Only recent branches (last 3 weeks) shown for large repos.</span></div>
+            </div>
+
+            <div class="help-section">
+                <h3>⚡ Workflow Operations</h3>
+                <div class="help-feature"><span class="hf-icon">▶️</span><span><strong>Run workflows</strong> — Trigger workflow_dispatch runs with branch selection and custom input parameters.</span></div>
+                <div class="help-feature"><span class="hf-icon">🔄</span><span><strong>Re-run jobs</strong> — Re-run all jobs or just failed jobs with a confirmation dialog.</span></div>
+                <div class="help-feature"><span class="hf-icon">📄</span><span><strong>Log viewer</strong> — View job logs inline without leaving the dashboard.</span></div>
+                <div class="help-feature"><span class="hf-icon">🔽</span><span><strong>Job breakdown</strong> — Expand any run to see individual jobs, steps, durations, and pass/fail status.</span></div>
+            </div>
+
+            <div class="help-section">
+                <h3>📊 Analytics &amp; Monitoring</h3>
+                <div class="help-feature"><span class="hf-icon">📈</span><span><strong>Failure analytics</strong> — Success rates, MTTR, and flaky workflow detection per repository.</span></div>
+                <div class="help-feature"><span class="hf-icon">🌍</span><span><strong>Environment matrix</strong> — Bird's-eye view of deploy status across dev, uat, staging, preprod, and prod.</span></div>
+                <div class="help-feature"><span class="hf-icon">⚡</span><span><strong>Activity feed</strong> — Live feed of recent runs across all repos with status filters.</span></div>
+                <div class="help-feature"><span class="hf-icon">🔔</span><span><strong>Notifications</strong> — Browser notifications when triggered workflows complete. Bell icon shows watched count.</span></div>
+            </div>
+
+            <div class="help-section">
+                <h3>🎨 Interface</h3>
+                <div class="help-feature"><span class="hf-icon">🌙</span><span><strong>Dark / Light theme</strong> — Toggle between dark and light modes. Your preference is saved.</span></div>
+                <div class="help-feature"><span class="hf-icon">🔁</span><span><strong>Auto-refresh</strong> — Dashboard refreshes every 30 seconds. Data is cached for 5 minutes to reduce API load.</span></div>
+            </div>
+
+            <div class="help-footer">Pipeline Hub v2.0 — Built for GitHub Actions</div>
         </div>
     </div>
 
@@ -2444,6 +2535,16 @@
                 badge.style.display = 'none';
             }
         }
+
+        // ── Help Modal ───────────────────────────────────
+        function toggleHelp() {
+            const modal = document.getElementById('helpModal');
+            modal.classList.toggle('show');
+        }
+
+        document.getElementById('helpModal').addEventListener('click', function(e) {
+            if (e.target === this) toggleHelp();
+        });
 
         function toggleNotifPanel() {
             const pending = watchedRuns.filter(w => !w.notified);
