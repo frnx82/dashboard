@@ -1831,8 +1831,10 @@
             // Only start refresh if this repo is still selected
             if (loadGeneration === myGeneration) {
                 refreshInterval = setInterval(() => {
-                    if (loadGeneration === myGeneration) {
+                    if (loadGeneration === myGeneration && currentTab === 'repos') {
                         loadRepoData(fullName, myGeneration);
+                    } else if (currentTab !== 'repos') {
+                        // Don't clear interval — just skip. User may switch back.
                     } else {
                         clearInterval(refreshInterval);
                     }
@@ -1852,6 +1854,9 @@
         }
 
         async function loadRepoData(fullName, generation) {
+            // Don't overwrite Matrix/Activity views with repo data
+            if (currentTab !== 'repos') return;
+
             const [owner, repo] = fullName.split('/');
             try {
                 const [wfRes, runsRes] = await Promise.all([
@@ -2081,14 +2086,15 @@
 
         async function confirmRun() {
             if (!pendingTrigger) return;
+            const { repo, workflowId, name, inputs: inputDefs } = pendingTrigger;
             const branch = document.getElementById('modalBranch').value;
             const inputs = {};
-            pendingTrigger.inputs.forEach(inp => {
+            (inputDefs || []).forEach(inp => {
                 const el = document.getElementById(`input_${inp.name}`);
                 if (el) inputs[inp.name] = el.value;
             });
-            closeModal();
-            triggerWorkflow(pendingTrigger.repo, pendingTrigger.workflowId, pendingTrigger.name, branch, inputs);
+            closeModal();  // This sets pendingTrigger = null
+            triggerWorkflow(repo, workflowId, name, branch, inputs);
         }
 
         async function triggerWorkflow(fullName, workflowId, name, branch, inputs) {

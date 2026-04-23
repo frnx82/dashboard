@@ -879,11 +879,14 @@ def list_branches(owner, repo):
 
     Repos can have 300+ branches. We don't want to list them all in the UI.
     Instead, we:
-      1. Always include the repo's default branch (passed via ?default= query param)
-      2. Always include environment branches: dev, uat, staging, prod, production,
-         pprod, preprod, develop, main, master (if they exist)
-      3. Include up to 50 additional branches (alphabetical)
-      4. Cap API calls at 2 pages (200 branches max scanned)
+      1. Scan the first 200 branches (2 API pages, alphabetical)
+      2. For large repos (200+), explicitly check each priority branch
+         individually via GET /branches/{name} (in case they're on page 3+)
+      3. For large repos, also scan pages 3-4 for RELEASE_* branches
+      4. Always include: default, main, master, dev, uat, staging, prod,
+         production, pprod, preprod, RELEASE_*, release/* (no date filter)
+      5. For regular branches: check commit dates, only include if
+         last commit was within the last 3 weeks (max 50)
     """
     try:
         cache_key = f'branches:{owner}/{repo}'
@@ -917,12 +920,63 @@ def list_branches(owner, repo):
             if len(data) < 100:
                 break
 
+        scanned_names = {name.lower() for name, _ in all_branches}
+        has_many_branches = len(all_branches) >= 200  # Likely has more pages
+
+        # ── For large repos, explicitly check each priority branch ──
+        # GitHub sorts alphabetically, so 'prod' (p), 'uat' (u), 'RELEASE_*' (R)
+        # may be on page 3+ and never scanned. Check them individually.
+        if has_many_branches:
+            missing_priorities = [n for n in PRIORITY_NAMES if n.lower() not in scanned_names]
+            injected_priority = []
+            for branch_name in missing_priorities:
+                try:
+                    bdata = _github_get(f'/repos/{owner}/{repo}/branches/{branch_name}')
+                    if bdata and isinstance(bdata, dict) and bdata.get('name'):
+                        sha = (bdata.get('commit') or {}).get('sha', '')
+                        all_branches.append((bdata['name'], sha))
+                        injected_priority.append(bdata['name'])
+                except Exception:
+                    pass  # Branch doesn't exist in this repo
+            if injected_priority:
+                print(f"[list_branches] ⚠ {owner}/{repo}: injected {len(injected_priority)} "
+                      f"priority branches not in first 200: {injected_priority}")
+
+            # Also scan for RELEASE_* branches on later pages (pages 3-4)
+            # since 'R' comes after typical feature/ branch prefixes
+            for page in range(3, 5):
+                rdata = _github_get(f'/repos/{owner}/{repo}/branches',
+                                    {'per_page': 100, 'page': page})
+                if not rdata or not isinstance(rdata, list):
+                    break
+                found_any = False
+                for b in rdata:
+                    bname = b.get('name', '')
+                    if bname.lower().startswith(('release_', 'release/')):
+                        if bname.lower() not in scanned_names:
+                            sha = (b.get('commit') or {}).get('sha', '')
+                            all_branches.append((bname, sha))
+                            scanned_names.add(bname.lower())
+                            found_any = True
+                    # Also pick up any priority names we missed
+                    elif bname.lower() in PRIORITY_NAMES and bname.lower() not in scanned_names:
+                        sha = (b.get('commit') or {}).get('sha', '')
+                        all_branches.append((bname, sha))
+                        scanned_names.add(bname.lower())
+                        found_any = True
+                if len(rdata) < 100:
+                    break
+
         # Separate into priority and regular branches
         # Priority = exact name match OR starts with release_ / release/
         RELEASE_PREFIXES = ('release_', 'release/')
         priority_branches = []
         regular_with_sha = []  # (name, sha) for date checking
+        seen = set()  # Deduplicate
         for name, sha in all_branches:
+            if name.lower() in seen:
+                continue
+            seen.add(name.lower())
             if name.lower() in PRIORITY_NAMES or name.lower().startswith(RELEASE_PREFIXES):
                 priority_branches.append(name)
             else:
@@ -952,6 +1006,7 @@ def list_branches(owner, repo):
         recent_branches = []
         stale_count = 0
         checked = 0
+        errors = 0
 
         for name, sha in regular_with_sha:
             if len(recent_branches) >= MAX_REGULAR:
@@ -963,6 +1018,10 @@ def list_branches(owner, repo):
             checked += 1
             try:
                 commit = _github_get(f'/repos/{owner}/{repo}/git/commits/{sha}')
+                if not commit or not isinstance(commit, dict):
+                    recent_branches.append(name)  # API error → include
+                    errors += 1
+                    continue
                 date_str = (commit.get('committer') or {}).get('date', '')
                 if date_str:
                     commit_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
@@ -971,29 +1030,31 @@ def list_branches(owner, repo):
                     else:
                         stale_count += 1
                 else:
-                    recent_branches.append(name)  # Can't determine → include
-            except Exception:
+                    recent_branches.append(name)  # No date → include
+            except Exception as e:
                 recent_branches.append(name)  # On error → include
+                errors += 1
 
         regular_branches = recent_branches
 
         result = priority_branches + regular_branches
 
-        # CRITICAL: If the default branch wasn't found in the scanned pages
-        # (300+ branches, alphabetical order → 'main' on page 3+), inject it.
+        # CRITICAL: If the default branch wasn't found anywhere, inject it.
         if default_branch:
             found = any(b.lower() == default_branch.lower() for b in result)
             if not found:
                 result.insert(0, default_branch)
-                print(f"[list_branches] ⚠ Default branch '{default_branch}' was NOT in the "
-                      f"first {len(all_branches)} branches — injected at top")
+                print(f"[list_branches] ⚠ Default branch '{default_branch}' injected at top")
 
         total_scanned = len(all_branches)
-        print(f"[list_branches] {owner}/{repo}: scanned {total_scanned}, "
-              f"checked {checked} commit dates ({stale_count} stale, "
-              f"{len(recent_branches)} recent) → "
+        print(f"[list_branches] {owner}/{repo}: scanned {total_scanned} branches"
+              f"{' (large repo — extended scan)' if has_many_branches else ''}, "
+              f"checked {checked} dates ({stale_count} stale, "
+              f"{len(recent_branches)} recent, {errors} errors) → "
               f"{len(priority_branches)} priority + {len(regular_branches)} regular "
-              f"= {len(result)} returned")
+              f"= {len(result)} total")
+        if priority_branches:
+            print(f"[list_branches]   priority: {priority_branches}")
 
         cache_set(cache_key, result)
         return jsonify(result)
