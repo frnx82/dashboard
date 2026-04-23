@@ -1684,6 +1684,8 @@
                 }
 
                 repos = Array.isArray(repoRes) ? repoRes : [];
+                // Safety: filter out any archived repos (in case cached data includes them)
+                repos = repos.filter(r => !r.archived);
                 renderRepos(repos);
 
                 // Show loading indicator while stats fetch in background

@@ -240,7 +240,7 @@ def list_repos():
 
 @app.route('/api/repos/<owner>/<repo>/branches')
 def list_branches(owner, repo):
-    """Return branches for a repo — priority env branches + max 50 others."""
+    """Return branches for a repo — priority branches first, then up to 50 others."""
     full_name = f"{owner}/{repo}"
     all_branches = BRANCHES.get(full_name, ['main'])
 
@@ -253,9 +253,9 @@ def list_branches(owner, repo):
     if default_branch:
         PRIORITY_NAMES.add(default_branch.lower())
 
-    RELEASE_PREFIXES = ('release_', 'release/')
-    priority = [b for b in all_branches if b.lower() in PRIORITY_NAMES or b.lower().startswith(RELEASE_PREFIXES)]
-    regular = [b for b in all_branches if b.lower() not in PRIORITY_NAMES and not b.lower().startswith(RELEASE_PREFIXES)]
+    PRIORITY_PREFIXES = ('release_', 'release/', 'hotfix/', 'hotfix-')
+    priority = [b for b in all_branches if b.lower() in PRIORITY_NAMES or b.lower().startswith(PRIORITY_PREFIXES)]
+    regular = [b for b in all_branches if b not in priority]
 
     # Sort priority: default first, then by importance
     priority_order = {
@@ -265,29 +265,20 @@ def list_branches(owner, repo):
     }
     def sort_key(b):
         if default_branch and b.lower() == default_branch.lower():
-            return (-1, b.lower())
-        return (priority_order.get(b.lower(), 10), b.lower())
+            return (-1, '')
+        base = priority_order.get(b.lower(), 20)
+        if b.lower().startswith(('release_', 'release/')): base = 11
+        elif b.lower().startswith(('hotfix/', 'hotfix-')): base = 12
+        return (base, b.lower())
     priority.sort(key=sort_key)
 
-    # Cap regular at 50, simulating 3-week recency filter
-    # In mock mode, treat JIRA branches > 70 as "stale" (older than 3 weeks)
-    recent_regular = []
-    stale = 0
-    for b in regular:
-        if len(recent_regular) >= 50:
-            break
-        # Simulate: high JIRA numbers are recent, low are stale
-        import re
-        m = re.search(r'(\d+)$', b)
-        if m and int(m.group(1)) < 70:
-            stale += 1
-            continue
-        recent_regular.append(b)
-    regular = recent_regular
+    # Cap regular at last 50 alphabetically (higher numbers = newer)
+    if len(regular) > 50:
+        regular = regular[-50:]
     result = priority + regular
 
     print(f"[mock-branches] {full_name}: {len(all_branches)} total → "
-          f"{len(priority)} priority + {len(regular)} recent ({stale} stale) = {len(result)} returned")
+          f"{len(priority)} priority + {len(regular)} regular = {len(result)} returned")
     return jsonify(result)
 
 
